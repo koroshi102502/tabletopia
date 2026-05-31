@@ -1,0 +1,124 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabletopia Creator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="app-header">
+            <div>
+                <h1>Tabletopia Creator</h1>
+                <p>Create a custom board, tokens, cards, dice, and more right in the browser.</p>
+            </div>
+            <div class="header-actions">
+                <button id="resetBtn" type="button">Reset board</button>
+                <button id="exportDataBtn" type="button">Download layout</button>
+                <button id="importDataBtn" type="button">Import layout</button>
+                <button id="playBtn" class="play-button" type="button">Play</button>
+            </div>
+        </header>
+
+        <button id="uiToggleBtn" class="ui-tab" aria-pressed="false" title="Hide / show UI">Hide UI</button>
+        <input id="importFileInput" type="file" accept="application/json" style="display:none">
+
+        <main class="workspace">
+            <button id="drawerToggle" class="drawer-tab" type="button">Creator</button>
+            <section class="controls-panel">
+                <div class="panel-block">
+                    <h2>Board</h2>
+                    <label class="input-group">
+                        <span>Upload board image</span>
+                        <input id="boardImageInput" type="file" accept="image/*">
+                    </label>
+                    <label class="input-group">
+                        <span>Board color</span>
+                        <input id="boardColor" type="color" value="#3a5f58">
+                    </label>
+                    <div class="board-preview-wrap">
+                        <img id="boardPreviewImage" alt="Imported board preview" src="" />
+                        <div id="boardPreviewNoImage" class="drawer-empty">Upload a board image to preview it here.</div>
+                    </div>
+                    <p class="hint">Use your own board artwork or a solid tabletop background.</p>
+                </div>
+
+                <div class="panel-block">
+                    <h2>Add component</h2>
+                    <label class="input-group">
+                        <span>Component type</span>
+                        <select id="componentType">
+                            <option value="token">Token</option>
+                            <option value="coin">Coin</option>
+                            <option value="dice">Dice</option>
+                            <option value="card">Card</option>
+                            <option value="board-piece">Board piece</option>
+                        </select>
+                    </label>
+                    <label class="input-group" id="diceSidesGroup" style="display:none;">
+                        <span>Dice sides</span>
+                        <select id="diceSidesSelect"></select>
+                    </label>
+                    <label class="input-group">
+                        <span>Name</span>
+                        <input id="componentName" type="text" placeholder="e.g. Pawn, Coin, Card face">
+                    </label>
+                    <label class="input-group">
+                        <span>Upload image</span>
+                        <input id="componentImageInput" type="file" accept="image/*">
+                    </label>
+                    <button id="addComponentBtn" type="button">Create component</button>
+                    <p class="hint">If no image is provided, the component will use a default style.</p>
+                </div>
+
+                <div class="panel-block">
+                    <h2>Selected component</h2>
+                    <div class="selected-info" id="selectedInfo">No component selected.</div>
+                    <label class="input-group">
+                        <span>Width</span>
+                        <input id="sizeSlider" type="range" min="30" max="20000" value="100">
+                    </label>
+                    <label class="input-group">
+                        <span>Rotation</span>
+                        <input id="rotateSlider" type="range" min="0" max="360" value="0">
+                    </label>
+                    <label class="input-group">
+                        <span>Opacity</span>
+                        <input id="opacitySlider" type="range" min="30" max="100" value="100">
+                    </label>
+                    <label class="input-group" id="selectedDiceSidesWrap" style="display:none;">
+                        <span>Dice sides</span>
+                        <select id="selectedDiceSides"></select>
+                    </label>
+                    <div class="button-row">
+                        <button id="bringFrontBtn" type="button" disabled>Bring front</button>
+                        <button id="sendBackBtn" type="button" disabled>Send back</button>
+                    </div>
+                    <button id="removeComponentBtn" type="button" class="danger" disabled>Remove component</button>
+                </div>
+
+                <div class="panel-block">
+                    <h2>Component list</h2>
+                    <div id="componentList" class="component-list"></div>
+                </div>
+            </section>
+
+            <section class="stage-panel">
+                <div class="stage-toolbar">
+                    <span>Click a piece to select it, then drag to move it.</span>
+                    <div id="userList" class="user-list"></div>
+                </div>
+                <div id="stage" class="stage" tabindex="0"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Remote user cursors container -->
+    <div id="remoteCursorsContainer"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js.js"></script>
+
+</body>
+</html>
