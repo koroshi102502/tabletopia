@@ -16,6 +16,8 @@ app.use(express.static(path.join(__dirname)));
 
 // Store connected users with their colors
 const users = new Map();
+// Store available lobby boards
+const boards = [];
 const colors = [
     '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
     '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B88B', '#ABEBC6'
@@ -37,7 +39,8 @@ io.on('connection', (socket) => {
     socket.emit('user:connected', {
         userId: socket.id,
         color: color,
-        allUsers: Array.from(users.values())
+        allUsers: Array.from(users.values()),
+        boards: boards
     });
 
     // Broadcast new user to everyone
@@ -89,6 +92,39 @@ io.on('connection', (socket) => {
             userId: socket.id,
             update: data
         });
+    });
+
+    // Lobby: create a board
+    socket.on('lobby:createBoard', (data) => {
+        const id = data.id || ('board-' + Date.now());
+        const name = data.name || ('Board ' + Date.now());
+        const board = { id, name, owner: socket.id };
+        boards.push(board);
+        // broadcast updated boards to all clients
+        io.emit('lobby:boards', boards);
+        console.log(`Board created: ${name} (${id}) by ${socket.id}`);
+    });
+
+    // Lobby: user join request (host requests user join to a board)
+    socket.on('lobby:joinBoard', (data) => {
+        // data: { boardId, targetUserId }
+        const targetId = data.targetUserId;
+        const boardId = data.boardId;
+        const targetUser = users.get(targetId);
+        const board = boards.find(b => b.id === boardId);
+        if (!board) return;
+        const payload = {
+            userId: targetId,
+            boardId: boardId,
+            username: targetUser ? targetUser.username : `User-${targetId.slice(0,5)}`,
+            color: targetUser ? targetUser.color : '#888'
+        };
+        if (board.owner && board.owner !== targetId) {
+            io.to(board.owner).emit('lobby:userJoinedBoard', { ...payload, target: 'host' });
+        }
+        if (targetId) {
+            io.to(targetId).emit('lobby:userJoinedBoard', { ...payload, target: 'self' });
+        }
     });
 
     // Handle disconnect

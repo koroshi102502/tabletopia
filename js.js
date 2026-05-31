@@ -20,9 +20,60 @@
                 userColor = data.color;
                 console.log(`Connected as ${userId} with color ${userColor}`);
                 
-                // Populate user list
-                updateUserList(data.allUsers);
+                // Populate user list and lobby players
+                remoteUsers.clear();
+                if (Array.isArray(data.allUsers)) {
+                    data.allUsers.forEach(u => {
+                        remoteUsers.set(u.userId, {
+                            id: u.userId,
+                            color: u.color,
+                            username: u.username
+                        });
+                    });
+                }
+                updateUserList(Array.from(remoteUsers.values()));
+
+                // receive known boards from server
+                lobbyBoards.length = 0;
+                if (Array.isArray(data.boards)) {
+                    data.boards.forEach(b => lobbyBoards.push(b));
+                }
+                updateLobbyBoards(lobbyBoards);
                 showCollabToast(`Connected! Your color: ${userColor}`);
+            });
+
+            socket.on('lobby:boards', (boardsFromServer) => {
+                lobbyBoards.length = 0;
+                if (Array.isArray(boardsFromServer)) boardsFromServer.forEach(b => lobbyBoards.push(b));
+                updateLobbyBoards(lobbyBoards);
+            });
+
+            socket.on('lobby:userJoinedBoard', (data) => {
+                if (data.userId === userId) {
+                    showCollabToast(`You were added to board ${data.boardId}`);
+                    return;
+                }
+                if (data.target === 'host') {
+                    const username = data.username || `User-${data.userId?.slice?.(0,5)}`;
+                    const token = createPiece('token', username + "'s token", null);
+                    token.style.width = '48px';
+                    token.style.height = '48px';
+                    token.style.left = (20 + Math.random() * 200) + 'px';
+                    token.style.top = (20 + Math.random() * 200) + 'px';
+                    token.dataset.owner = data.userId;
+                    if (data.color) {
+                        const dot = document.createElement('div');
+                        dot.style.width = '12px';
+                        dot.style.height = '12px';
+                        dot.style.borderRadius = '50%';
+                        dot.style.background = data.color;
+                        dot.style.position = 'absolute';
+                        dot.style.right = '6px';
+                        dot.style.top = '6px';
+                        token.appendChild(dot);
+                    }
+                    showCollabToast(`${username} joined board ${data.boardId}`);
+                }
             });
             
             socket.on('user:joined', (data) => {
@@ -70,6 +121,7 @@
                 `;
                 userListEl.appendChild(badge);
             });
+            updateLobbyUsers(users);
         }
         
         function showRemoteCursor(data) {
@@ -112,6 +164,134 @@
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
+
+        const lobbyBoards = [];
+        let selectedLobbyInvite = null;
+
+        function openLobbyPage() {
+            if (lobbyPanel) lobbyPanel.classList.remove('hidden');
+            document.body.classList.add('lobby-visible');
+            updateLobbyBoards(lobbyBoards);
+            updateLobbyUsers(Array.from(remoteUsers.values()));
+        }
+
+        function closeLobbyPage() {
+            if (lobbyPanel) lobbyPanel.classList.add('hidden');
+            document.body.classList.remove('lobby-visible');
+            closeLobbyConfirm();
+        }
+
+        function updateLobbyBoards(boards) {
+            if (!lobbyBoardsWrap) return;
+            lobbyBoardsWrap.innerHTML = '';
+            if (!boards.length) {
+                lobbyBoardsWrap.innerHTML = '<div class="lobby-empty">No boards yet. Create one to invite players.</div>';
+                updateLobbyUsers(Array.from(remoteUsers.values()));
+                return;
+            }
+            boards.forEach(board => {
+                const row = document.createElement('div');
+                row.className = 'lobby-board-row';
+                row.innerHTML = `<div><strong>${board.name}</strong></div><div class="lobby-board-id">${board.id}</div>`;
+                lobbyBoardsWrap.appendChild(row);
+            });
+            updateLobbyUsers(Array.from(remoteUsers.values()));
+        }
+
+        function updateLobbyUsers(users) {
+            if (!lobbyPlayersWrap) return;
+            lobbyPlayersWrap.innerHTML = '';
+            if (!users.length) {
+                lobbyPlayersWrap.innerHTML = '<div class="lobby-empty">No players connected yet.</div>';
+                return;
+            }
+            users.forEach(user => {
+                const row = document.createElement('div');
+                row.className = 'lobby-player-row';
+                const name = user.id === userId ? 'You' : (user.username || 'User');
+                const meta = document.createElement('div');
+                meta.className = 'player-meta';
+                meta.innerHTML = `
+                    <span class="user-color-dot" style="background:${user.color || '#888'}"></span>
+                    <span class="player-name">${name}</span>
+                `;
+                row.appendChild(meta);
+
+                if (user.id !== userId) {
+                    const chooser = document.createElement('select');
+                    chooser.className = 'lobby-board-select';
+                    if (!lobbyBoards.length) {
+                        const emptyOption = document.createElement('option');
+                        emptyOption.textContent = 'No boards available';
+                        chooser.appendChild(emptyOption);
+                        chooser.disabled = true;
+                    } else {
+                        lobbyBoards.forEach(board => {
+                            const opt = document.createElement('option');
+                            opt.value = board.id;
+                            opt.textContent = board.name;
+                            chooser.appendChild(opt);
+                        });
+                    }
+
+                    const inviteButton = document.createElement('button');
+                    inviteButton.type = 'button';
+                    inviteButton.className = 'lobby-invite-btn';
+                    inviteButton.textContent = 'Invite';
+                    inviteButton.disabled = !lobbyBoards.length;
+                    inviteButton.addEventListener('click', () => {
+                        openLobbyConfirm(user, chooser.value);
+                    });
+
+                    row.appendChild(chooser);
+                    row.appendChild(inviteButton);
+                } else {
+                    const label = document.createElement('span');
+                    label.className = 'lobby-self-label';
+                    label.textContent = '(This session)';
+                    row.appendChild(label);
+                }
+
+                lobbyPlayersWrap.appendChild(row);
+            });
+        }
+
+        function onCreateBoardClick() {
+            const name = prompt('Board name') || `Board ${Date.now()}`;
+            const board = { id: 'board-' + Date.now(), name, owner: userId };
+            lobbyBoards.push(board);
+            if (socket && socket.connected) socket.emit('lobby:createBoard', board);
+            updateLobbyBoards(lobbyBoards);
+            showCollabToast(`Created board "${board.name}"`);
+        }
+
+        function openLobbyConfirm(user, boardId) {
+            const board = lobbyBoards.find(b => b.id === boardId);
+            if (!board) {
+                showCollabToast('Please create a board first.');
+                return;
+            }
+            selectedLobbyInvite = { user, board };
+            if (lobbyConfirmMessage) lobbyConfirmMessage.textContent = `Invite ${user.username || 'User'} to board "${board.name}"?`;
+            if (lobbyConfirmModal) lobbyConfirmModal.classList.remove('hidden');
+        }
+
+        function closeLobbyConfirm() {
+            selectedLobbyInvite = null;
+            if (lobbyConfirmModal) lobbyConfirmModal.classList.add('hidden');
+        }
+
+        function acceptLobbyInvite() {
+            if (!selectedLobbyInvite) return;
+            const { user, board } = selectedLobbyInvite;
+            if (socket && socket.connected) {
+                socket.emit('lobby:joinBoard', {
+                    targetUserId: user.id,
+                    boardId: board.id
+                });
+            }
+            closeLobbyConfirm();
+        }
         
         // Track mouse movement to send cursor position
         document.addEventListener('mousemove', (e) => {
@@ -147,6 +327,16 @@
         const boardPreviewNoImage = document.getElementById('boardPreviewNoImage');
         const uiToggleBtn = document.getElementById('uiToggleBtn');
         const playBtn = document.getElementById('playBtn');
+        const lobbyBtn = document.getElementById('lobbyBtn');
+        const lobbyPanel = document.getElementById('lobbyPanel');
+        const closeLobbyBtn = document.getElementById('closeLobbyBtn');
+        const lobbyBoardsWrap = document.getElementById('lobbyBoards');
+        const lobbyPlayersWrap = document.getElementById('lobbyPlayers');
+        const lobbyConfirmModal = document.getElementById('lobbyConfirmModal');
+        const lobbyConfirmMessage = document.getElementById('lobbyConfirmMessage');
+        const lobbyConfirmAccept = document.getElementById('lobbyConfirmAccept');
+        const lobbyConfirmCancel = document.getElementById('lobbyConfirmCancel');
+        const lobbyCreateBtn = document.getElementById('lobbyCreateBtn');
         const importDataBtn = document.getElementById('importDataBtn');
         const importFileInput = document.getElementById('importFileInput');
 
@@ -224,6 +414,12 @@
         playBtn.addEventListener('click', () => {
             if (!playMode) enterPlayMode(); else exitPlayMode();
         });
+
+        if (lobbyBtn) lobbyBtn.addEventListener('click', openLobbyPage);
+        if (closeLobbyBtn) closeLobbyBtn.addEventListener('click', closeLobbyPage);
+        if (lobbyConfirmAccept) lobbyConfirmAccept.addEventListener('click', acceptLobbyInvite);
+        if (lobbyConfirmCancel) lobbyConfirmCancel.addEventListener('click', closeLobbyConfirm);
+        if (lobbyCreateBtn) lobbyCreateBtn.addEventListener('click', onCreateBoardClick);
 
         // Import layout flow
         importDataBtn.addEventListener('click', () => importFileInput.click());

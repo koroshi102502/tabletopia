@@ -74,6 +74,13 @@ select {
     background: #22995d;
 }
 
+.lobby-button {
+    background: #8656ff;
+}
+.lobby-button:hover {
+    background: #6b3ee6;
+}
+
 /* Play mode visuals */
 .play-hud {
     position: fixed;
@@ -660,4 +667,174 @@ button:disabled {
         transform: translateY(100%);
         opacity: 0;
     }
+}
+
+/* Lobby page styles */
+.lobby-panel {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 13, 18, 0.96);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+    z-index: 250;
+}
+.lobby-panel.hidden {
+    display: none;
+}
+.lobby-panel-inner {
+    width: min(100%, 940px);
+    max-height: min(100%, 92vh);
+    overflow-y: auto;
+    background: #13181f;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 1.2rem;
+    padding: 24px;
+    box-shadow: 0 25px 60px rgba(0,0,0,.42);
+}
+.lobby-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.lobby-panel-header h2 {
+    margin: 0;
+}
+.lobby-panel-header p {
+    margin: 8px 0 0;
+    color: #b8c5d6;
+}
+.close-lobby-btn,
+.create-btn,
+.lobby-invite-btn,
+.confirm-btn,
+.cancel-btn {
+    border: none;
+    border-radius: .85rem;
+    padding: .85rem 1rem;
+    color: white;
+    cursor: pointer;
+    background: #2f76c0;
+}
+.close-lobby-btn {
+    background: #2b2f38;
+}
+.close-lobby-btn:hover,
+.create-btn:hover,
+.confirm-btn:hover {
+    background: #2460a4;
+}
+.lobby-section {
+    background: #161b22;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 1rem;
+    padding: 18px;
+    margin-bottom: 18px;
+}
+.lobby-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.lobby-section-header h3 {
+    margin: 0;
+}
+.lobby-section-content {
+    display: grid;
+    gap: 12px;
+}
+.lobby-board-row,
+.lobby-player-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    background: #10151d;
+    border-radius: .9rem;
+    padding: 12px 14px;
+}
+.lobby-board-row {
+    grid-template-columns: 1fr auto;
+}
+.lobby-board-id {
+    color: #9fb9d9;
+    font-size: .86rem;
+}
+.lobby-player-row {
+    grid-template-columns: minmax(180px, 1fr) 180px 96px;
+}
+.lobby-player-row .player-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.user-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.12);
+}
+.player-name,
+.lobby-self-label {
+    color: #eef1f5;
+}
+.lobby-board-select {
+    width: 100%;
+    border-radius: .75rem;
+    border: 1px solid rgba(255,255,255,.08);
+    background: #12181f;
+    color: #eef1f5;
+    padding: .8rem .95rem;
+}
+.lobby-invite-btn {
+    width: 100%;
+    justify-self: stretch;
+    background: #2bb673;
+}
+.lobby-invite-btn:hover {
+    background: #22995d;
+}
+.lobby-empty {
+    color: #9daec7;
+    padding: 1rem .5rem;
+}
+.lobby-confirm {
+    position: fixed;
+    inset: 0;
+    backdrop-filter: blur(6px);
+    background: rgba(0,0,0,0.55);
+    display: grid;
+    place-items: center;
+    z-index: 260;
+}
+.lobby-confirm.hidden {
+    display: none;
+}
+.lobby-confirm-card {
+    background: #12181f;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 1.1rem;
+    padding: 24px;
+    width: min(100%, 420px);
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+}
+.lobby-confirm-message {
+    margin-bottom: 18px;
+    color: #eef1f5;
+    line-height: 1.5;
+}
+.lobby-confirm-actions {
+    display: flex;
+    gap: 10px;
+}
+.cancel-btn {
+    background: #c03f49;
+}
+.cancel-btn:hover {
+    background: #a8333d;
 }

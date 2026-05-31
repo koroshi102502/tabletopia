@@ -18,6 +18,7 @@
                 <button id="exportDataBtn" type="button">Download layout</button>
                 <button id="importDataBtn" type="button">Import layout</button>
                 <button id="playBtn" class="play-button" type="button">Play</button>
+                <button id="lobbyBtn" class="lobby-button" type="button">Lobby</button>
             </div>
         </header>
 
@@ -113,6 +114,41 @@
             </section>
         </main>
     </div>
+
+    <section id="lobbyPanel" class="lobby-panel hidden">
+        <div class="lobby-panel-inner">
+            <div class="lobby-panel-header">
+                <div>
+                    <h2>Lobby</h2>
+                    <p>Manage boards and invite players to join.</p>
+                </div>
+                <button id="closeLobbyBtn" type="button" class="close-lobby-btn">Close</button>
+            </div>
+
+            <div class="lobby-section">
+                <div class="lobby-section-header">
+                    <h3>Boards</h3>
+                    <button id="lobbyCreateBtn" type="button" class="create-btn">Create board</button>
+                </div>
+                <div id="lobbyBoards" class="lobby-section-content"></div>
+            </div>
+
+            <div class="lobby-section">
+                <h3>Players</h3>
+                <div id="lobbyPlayers" class="lobby-players-list"></div>
+            </div>
+
+            <div id="lobbyConfirmModal" class="lobby-confirm hidden">
+                <div class="lobby-confirm-card">
+                    <div id="lobbyConfirmMessage" class="lobby-confirm-message"></div>
+                    <div class="lobby-confirm-actions">
+                        <button id="lobbyConfirmAccept" type="button" class="confirm-btn">Confirm</button>
+                        <button id="lobbyConfirmCancel" type="button" class="cancel-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- Remote user cursors container -->
     <div id="remoteCursorsContainer"></div>
