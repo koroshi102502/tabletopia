@@ -11,25 +11,14 @@
 
 body {
     margin: 0;
-.remote-cursor {
-    background: rgba(255,255,255,0.06);
-    padding: 4px 6px;
-    border-radius: 6px;
-    border: 2px solid rgba(255,255,255,0.15);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
-}
     min-height: 100vh;
+    background: #11171c;
 }
 
 button,
 input,
 select {
     font: inherit;
-}
-.remote-cursor-label {
-    display: block;
-    font-size: 0.8rem;
-    padding: 2px 8px;
 }
 
 .app-shell {
@@ -45,10 +34,11 @@ select {
     gap: 1rem;
     padding: 1.35rem 1.5rem;
     background: #151b23;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
 .piece:hover {
     cursor: pointer;
-}
-    border-bottom: 1px solid rgba(255,255,255,.08);
 }
 
 .app-header h1 {
@@ -718,16 +708,13 @@ button:disabled {
 
 .remote-cursor {
     position: fixed;
-    width: 20px;
-    height: 20px;
     pointer-events: none;
     z-index: 151;
-    font-size: 0.7rem;
-    font-weight: 600;
-    white-space: nowrap;
     display: flex;
-    align-items: flex-end;
+    flex-direction: column;
+    align-items: center;
     gap: 4px;
+    transform: translate(-50%, -100%);
 }
 
 .remote-cursor-arrow {
@@ -736,20 +723,15 @@ button:disabled {
     border-left: 6px solid transparent;
     border-right: 6px solid transparent;
     border-top: 10px solid;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 .remote-cursor-label {
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.75);
     color: white;
-    padding: 2px 6px;
-    border-radius: 3px;
-    display: none;
-}
-
-.remote-cursor:hover .remote-cursor-label {
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    white-space: nowrap;
     display: block;
 }
 

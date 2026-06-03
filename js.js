@@ -260,8 +260,8 @@
             cursor.style.left = data.x + 'px';
             cursor.style.top = data.y + 'px';
             cursor.innerHTML = `
+                <div class="remote-cursor-label">${data.username || 'User'}</div>
                 <div class="remote-cursor-arrow" style="border-top-color: ${data.color}"></div>
-                <div class="remote-cursor-label">${data.username}</div>
             `;
         }
         
@@ -587,12 +587,24 @@
         }
         
         // Track mouse movement to send cursor position
+        let remoteCursorPending = null;
+        let remoteCursorRaf = null;
+
         document.addEventListener('mousemove', (e) => {
             if (socket && socket.connected) {
-                socket.emit('cursor:move', {
-                    x: e.clientX,
-                    y: e.clientY
-                });
+                remoteCursorPending = { x: e.clientX, y: e.clientY };
+                if (!remoteCursorRaf) {
+                    remoteCursorRaf = requestAnimationFrame(() => {
+                        if (remoteCursorPending && socket && socket.connected) {
+                            socket.emit('cursor:move', {
+                                x: remoteCursorPending.x,
+                                y: remoteCursorPending.y
+                            });
+                        }
+                        remoteCursorPending = null;
+                        remoteCursorRaf = null;
+                    });
+                }
             }
         });
         
@@ -1236,6 +1248,19 @@
             dragState = { piece, offsetX, offsetY };
             stage.setPointerCapture(event.pointerId);
 
+            let pendingDrag = null;
+            let dragRaf = null;
+
+            function sendPendingDrag() {
+                if (!pendingDrag || !socket || !socket.connected) {
+                    dragRaf = null;
+                    return;
+                }
+                socket.emit('piece:drag', pendingDrag);
+                pendingDrag = null;
+                dragRaf = null;
+            }
+
             function pointerMove(moveEvent) {
                 if (!dragState) return;
                 const x = (moveEvent.clientX - rect.left) / scale - panState.translateX - dragState.offsetX;
@@ -1247,17 +1272,23 @@
                 
                 // ============ COLLABORATION: Broadcast piece drag ============
                 if (socket && socket.connected) {
-                    socket.emit('piece:drag', {
+                    pendingDrag = {
                         pieceId: dragState.piece.dataset.entryId,
                         x: dragState.piece.style.left,
                         y: dragState.piece.style.top
-                    });
+                    };
+                    if (!dragRaf) {
+                        dragRaf = requestAnimationFrame(sendPendingDrag);
+                    }
                 }
                 // ============ END COLLABORATION ============
             }
 
             function pointerUp() {
                 dragState = null;
+                if (dragRaf) {
+                    sendPendingDrag();
+                }
                 document.removeEventListener('pointermove', pointerMove);
                 document.removeEventListener('pointerup', pointerUp);
                 // publish updated layout if we are the host of a created board
