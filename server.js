@@ -237,6 +237,8 @@ io.on('connection', (socket) => {
         // send the published board data to all current members so they can load it immediately
         try {
             (board.members || []).forEach(memberId => {
+                // avoid sending the published payload back to the owner (prevents publish->receive loops)
+                if (board.owner && memberId === board.owner) return;
                 try {
                     io.to(memberId).emit('lobby:boardPublished', { boardId: board.id, boardData: board.data });
                 } catch (e) {
