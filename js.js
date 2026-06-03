@@ -83,6 +83,22 @@
                 }
             });
 
+            socket.on('lobby:ended', (data) => {
+                if (!data || !data.boardId) return;
+                // if this client was viewing the board, close it
+                if (currentBoardId === data.boardId || lastCreatedBoardId === data.boardId) {
+                    currentBoardId = null;
+                    lastCreatedBoardId = null;
+                    if (playMode) exitPlayMode();
+                    showCollabToast('Lobby ended by host');
+                }
+            });
+
+            socket.on('lobby:memberLeft', (data) => {
+                if (!data) return;
+                showCollabToast(`A player left lobby ${data.boardId}`);
+            });
+
             socket.on('lobby:userJoinedBoard', (data) => {
                 if (data.userId === userId) {
                     showCollabToast(`You were added to board ${data.boardId}`);
@@ -234,12 +250,17 @@
             document.body.classList.add('lobby-visible');
             updateLobbyBoards(lobbyBoards);
             updateLobbyUsers(Array.from(remoteUsers.values()));
+            // show leave button while in lobby
+            const leaveBtn = document.getElementById('leaveLobbyBtn');
+            if (leaveBtn) leaveBtn.classList.remove('hidden');
         }
 
         function closeLobbyPage() {
             if (lobbyPanel) lobbyPanel.classList.add('hidden');
             document.body.classList.remove('lobby-visible');
             closeLobbyConfirm();
+            const leaveBtn = document.getElementById('leaveLobbyBtn');
+            if (leaveBtn) leaveBtn.classList.add('hidden');
         }
 
         function updateLobbyBoards(boards) {
@@ -316,6 +337,20 @@
                 return;
             }
             socket.emit('lobby:requestJoinBoard', { boardId });
+        }
+
+        // Leave current board/lobby
+        function lobbyLeaveBoard(boardId) {
+            if (!boardId) boardId = currentBoardId || lastCreatedBoardId;
+            if (!boardId) return;
+            if (socket && socket.connected) socket.emit('lobby:leaveBoard', { boardId });
+            // cleanup local state
+            currentBoardId = null;
+            lastCreatedBoardId = null;
+            // close play if active
+            if (playMode) exitPlayMode();
+            closeLobbyPage();
+            showCollabToast('Left lobby');
         }
 
         function getCurrentLayout() {
@@ -435,6 +470,34 @@
             }
             updateLobbyBoards(lobbyBoards);
             showCollabToast(`Created board "${board.name}"`);
+            // Ask user to import a layout for this new board
+            const file = prompt('If you have a layout file path paste it here, otherwise press Cancel to pick a file manually');
+            // We will open the import file picker instead of relying on path
+            importFileInput.click();
+            importFileInput.onchange = (event) => {
+                const f = event.target.files[0];
+                if (!f) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const config = JSON.parse(reader.result);
+                        // load locally
+                        loadLayout(config);
+                        // publish to server as board data
+                        if (socket && socket.connected) {
+                            socket.emit('lobby:createBoard', board);
+                            setTimeout(() => lobbyPublishBoard(board.id), 200);
+                        }
+                        showCollabToast('Imported layout and published to lobby');
+                        // clear input handler
+                        importFileInput.onchange = null;
+                        importFileInput.value = '';
+                    } catch (err) {
+                        alert('Invalid layout file: ' + err.message);
+                    }
+                };
+                reader.readAsText(f);
+            };
         }
 
         function openLobbyConfirm(user, boardId) {
@@ -591,7 +654,15 @@
         if (closeLobbyBtn) closeLobbyBtn.addEventListener('click', closeLobbyPage);
         if (lobbyConfirmAccept) lobbyConfirmAccept.addEventListener('click', acceptLobbyInvite);
         if (lobbyConfirmCancel) lobbyConfirmCancel.addEventListener('click', closeLobbyConfirm);
+        const changeNameBtn = document.getElementById('changeNameBtn');
         if (lobbyCreateBtn) lobbyCreateBtn.addEventListener('click', onCreateBoardClick);
+        if (changeNameBtn) changeNameBtn.addEventListener('click', () => {
+            const name = prompt('Change display name', '');
+            if (name && name.trim() && socket && socket.connected) {
+                socket.emit('user:setName', { name: name.trim() });
+                showCollabToast('Name updated');
+            }
+        });
 
         // Import layout flow
         importDataBtn.addEventListener('click', () => importFileInput.click());
@@ -1235,5 +1306,12 @@
         window.addEventListener('load', () => {
             applyBoardStyles();
             selectPiece(null);
+            const leaveBtn = document.getElementById('leaveLobbyBtn');
+            if (leaveBtn) leaveBtn.addEventListener('click', () => {
+                // confirm
+                if (confirm('Leave this lobby?')) {
+                    lobbyLeaveBoard();
+                }
+            });
         });
     

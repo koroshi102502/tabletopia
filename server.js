@@ -173,6 +173,34 @@ io.on('connection', (socket) => {
         socket.emit('lobby:boardJoined', { ...payload, target: 'self', boardData: board.data || null });
     });
 
+    // Lobby: leave board
+    socket.on('lobby:leaveBoard', (data) => {
+        const boardId = data && data.boardId;
+        const board = boards.find(b => b.id === boardId);
+        if (!board) return;
+        // remove member
+        board.members = board.members?.filter(id => id !== socket.id) || [];
+        // if owner left, end session: notify all members and delete board
+        if (board.owner === socket.id) {
+            const members = board.members.slice();
+            // notify all connected members that lobby ended
+            members.forEach(mId => {
+                io.to(mId).emit('lobby:ended', { boardId: board.id });
+            });
+            // also notify owner (self)
+            socket.emit('lobby:ended', { boardId: board.id });
+            // remove board
+            const idx = boards.findIndex(b => b.id === board.id);
+            if (idx >= 0) boards.splice(idx, 1);
+            broadcastBoards();
+            return;
+        }
+        // otherwise just broadcast updated boards
+        broadcastBoards();
+        // notify owner and others
+        if (board.owner) io.to(board.owner).emit('lobby:memberLeft', { boardId: board.id, userId: socket.id });
+    });
+
     // Lobby: host publishes full board data (layout/config)
     socket.on('lobby:publishBoard', (data) => {
         // data: { boardId, boardData }
