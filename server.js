@@ -234,6 +234,18 @@ io.on('connection', (socket) => {
         if (board.owner && board.owner !== socket.id) return;
         board.data = data.boardData || null;
         broadcastBoards();
+        // send the published board data to all current members so they can load it immediately
+        try {
+            (board.members || []).forEach(memberId => {
+                try {
+                    io.to(memberId).emit('lobby:boardPublished', { boardId: board.id, boardData: board.data });
+                } catch (e) {
+                    // ignore per-member errors
+                }
+            });
+        } catch (e) {
+            // ignore
+        }
     });
 
     // Handle disconnect

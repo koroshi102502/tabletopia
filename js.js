@@ -107,6 +107,18 @@
                 }
             });
 
+            // Owner-published board data arrived (push to all members)
+            socket.on('lobby:boardPublished', (data) => {
+                if (!data || !data.boardId) return;
+                // If we are a member or the target of this board, load it
+                // If we already have this board open, reload; otherwise set currentBoardId and load
+                if (!currentBoardId) currentBoardId = data.boardId;
+                if (data.boardData) {
+                    try { showLoading('Applying published board...'); } catch (e) {}
+                    try { loadLayout(data.boardData); } finally { try { hideLoading(); } catch (e) {} }
+                }
+            });
+
             socket.on('lobby:ended', (data) => {
                 if (!data || !data.boardId) return;
                 // if this client was viewing the board, close it
