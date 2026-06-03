@@ -340,6 +340,7 @@
             
             cursor.style.left = data.x + 'px';
             cursor.style.top = data.y + 'px';
+            // Label first (appears above), then arrow (appears below in visual order)
             cursor.innerHTML = `
                 <div class="remote-cursor-label">${data.username || 'User'}</div>
                 <div class="remote-cursor-arrow" style="border-top-color: ${data.color}"></div>
@@ -643,9 +644,10 @@
             closeLobbyConfirm();
         }
         
-        // Track mouse movement to send cursor position
+        // Track mouse movement to send cursor position (throttled to ~10 FPS in play mode, ~20 FPS in edit)
         let remoteCursorPending = null;
         let remoteCursorRaf = null;
+        let lastCursorSendTime = 0;
 
         document.addEventListener('mousemove', (e) => {
             if (socket && socket.connected) {
@@ -653,10 +655,16 @@
                 if (!remoteCursorRaf) {
                     remoteCursorRaf = requestAnimationFrame(() => {
                         if (remoteCursorPending && socket && socket.connected) {
-                            socket.emit('cursor:move', {
-                                x: remoteCursorPending.x,
-                                y: remoteCursorPending.y
-                            });
+                            const now = Date.now();
+                            // In play mode, throttle to ~10 FPS (100ms); in edit mode ~20 FPS (50ms)
+                            const minInterval = playMode ? 100 : 50;
+                            if (now - lastCursorSendTime >= minInterval) {
+                                socket.emit('cursor:move', {
+                                    x: remoteCursorPending.x,
+                                    y: remoteCursorPending.y
+                                });
+                                lastCursorSendTime = now;
+                            }
                         }
                         remoteCursorPending = null;
                         remoteCursorRaf = null;
@@ -1435,13 +1443,19 @@
 
             let pendingDrag = null;
             let dragRaf = null;
+            let lastDragSendTime = 0;
 
             function sendPendingDrag() {
                 if (!pendingDrag || !socket || !socket.connected) {
                     dragRaf = null;
                     return;
                 }
-                socket.emit('piece:drag', pendingDrag);
+                // In play mode, throttle drag sends to ~10 FPS (100ms min); in edit don't send
+                const now = Date.now();
+                if (playMode && now - lastDragSendTime >= 100) {
+                    socket.emit('piece:drag', pendingDrag);
+                    lastDragSendTime = now;
+                }
                 pendingDrag = null;
                 dragRaf = null;
             }
@@ -1487,6 +1501,11 @@
             document.addEventListener('pointerup', pointerUp);
         }
 
+        // Throttle piece updates in play mode to reduce network load
+        let lastPieceUpdateTime = 0;
+        let pendingPieceUpdate = null;
+        let pieceUpdateTimeout = null;
+
         function updateSelectedPiece() {
             if (!selectedPiece) return;
             selectedPiece.style.width = sizeSlider.value + 'px';
@@ -1500,14 +1519,34 @@
             if (isBoardBeingEdited()) {
                 setBoardDirty(true);
             } else if (socket && socket.connected && selectedPiece && selectedPiece.dataset.entryId) {
-                socket.emit('piece:update', {
+                // In play mode, throttle piece:update to max once per 200ms to reduce network load
+                const now = Date.now();
+                const updatePayload = {
                     entryId: selectedPiece.dataset.entryId,
                     width: selectedPiece.style.width,
                     height: selectedPiece.style.height,
                     rotation: selectedPiece.dataset.rotation,
                     opacity: selectedPiece.style.opacity,
                     zIndex: selectedPiece.style.zIndex
-                });
+                };
+                pendingPieceUpdate = updatePayload;
+                
+                if (now - lastPieceUpdateTime >= 200) {
+                    socket.emit('piece:update', updatePayload);
+                    lastPieceUpdateTime = now;
+                    pendingPieceUpdate = null;
+                    if (pieceUpdateTimeout) clearTimeout(pieceUpdateTimeout);
+                } else if (!pieceUpdateTimeout) {
+                    // Defer the update to be sent after throttle window
+                    pieceUpdateTimeout = setTimeout(() => {
+                        if (pendingPieceUpdate && socket && socket.connected) {
+                            socket.emit('piece:update', pendingPieceUpdate);
+                            lastPieceUpdateTime = Date.now();
+                        }
+                        pieceUpdateTimeout = null;
+                        pendingPieceUpdate = null;
+                    }, 200);
+                }
             }
         }
 
