@@ -217,6 +217,100 @@ button:disabled {
     background: #17202a;
 }
 
+.lobby-board-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .75rem;
+    padding: .9rem 1rem;
+    border-radius: 1rem;
+    background: #12181f;
+    border: 1px solid rgba(255,255,255,.08);
+}
+
+.lobby-board-details {
+    display: grid;
+    gap: .35rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.board-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .6rem;
+}
+
+.board-meta-text,
+.board-status-label {
+    color: #9daec7;
+    font-size: .95rem;
+}
+
+.lobby-board-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.lobby-board-actions button {
+    min-width: 120px;
+    padding: .75rem .9rem;
+    border-radius: .75rem;
+    border: none;
+    color: white;
+    cursor: pointer;
+    transition: transform .15s ease, background .2s ease;
+}
+
+.lobby-board-actions button:hover {
+    transform: translateY(-1px);
+}
+
+.lobby-join-btn {
+    background: #4e8af1;
+}
+
+.lobby-join-btn:hover {
+    background: #3c6dd1;
+}
+
+.lobby-solo-btn {
+    background: #7b5fff;
+}
+
+.lobby-solo-btn:hover {
+    background: #5d44d7;
+}
+
+.lobby-start-btn {
+    background: #2bb673;
+}
+
+.lobby-start-btn:hover {
+    background: #22995d;
+}
+
+.lobby-start-btn:disabled {
+    background: #3f5c7c;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.lobby-joined-label {
+    display: inline-flex;
+    align-items: center;
+    padding: .65rem .9rem;
+    border-radius: .75rem;
+    background: rgba(44, 134, 255, .14);
+    color: #d7e8ff;
+    font-weight: 600;
+}
+
 .stage-panel {
     display: flex;
     flex-direction: column;

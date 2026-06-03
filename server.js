@@ -23,6 +23,19 @@ const colors = [
     '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B88B', '#ABEBC6'
 ];
 
+function broadcastBoards() {
+    io.emit('lobby:boards', boards);
+}
+
+function cleanupDisconnectedBoards() {
+    for (let i = boards.length - 1; i >= 0; i--) {
+        boards[i].members = boards[i].members?.filter(id => users.has(id)) || [];
+        if (!boards[i].members.length) {
+            boards.splice(i, 1);
+        }
+    }
+}
+
 io.on('connection', (socket) => {
     // Assign random color to new user
     const color = colors[Math.floor(Math.random() * colors.length)];
@@ -98,10 +111,9 @@ io.on('connection', (socket) => {
     socket.on('lobby:createBoard', (data) => {
         const id = data.id || ('board-' + Date.now());
         const name = data.name || ('Board ' + Date.now());
-        const board = { id, name, owner: socket.id };
+        const board = { id, name, owner: socket.id, members: [socket.id] };
         boards.push(board);
-        // broadcast updated boards to all clients
-        io.emit('lobby:boards', boards);
+        broadcastBoards();
         console.log(`Board created: ${name} (${id}) by ${socket.id}`);
     });
 
@@ -113,6 +125,9 @@ io.on('connection', (socket) => {
         const targetUser = users.get(targetId);
         const board = boards.find(b => b.id === boardId);
         if (!board) return;
+        if (!board.members) board.members = [];
+        if (!board.members.includes(targetId)) board.members.push(targetId);
+        broadcastBoards();
         const payload = {
             userId: targetId,
             boardId: boardId,
@@ -127,10 +142,32 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Lobby: player requests to join a board
+    socket.on('lobby:requestJoinBoard', (data) => {
+        const boardId = data.boardId;
+        const board = boards.find(b => b.id === boardId);
+        if (!board) return;
+        if (!board.members) board.members = [];
+        if (!board.members.includes(socket.id)) board.members.push(socket.id);
+        broadcastBoards();
+        const payload = {
+            userId: socket.id,
+            boardId: boardId,
+            username: users.get(socket.id).username,
+            color: users.get(socket.id).color
+        };
+        if (board.owner && board.owner !== socket.id) {
+            io.to(board.owner).emit('lobby:boardJoined', { ...payload, target: 'host' });
+        }
+        socket.emit('lobby:boardJoined', { ...payload, target: 'self' });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
         const user = users.get(socket.id);
         users.delete(socket.id);
+        cleanupDisconnectedBoards();
+        broadcastBoards();
         console.log(`User disconnected: ${socket.id}`);
         
         io.emit('user:left', {

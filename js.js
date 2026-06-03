@@ -48,6 +48,17 @@
                 updateLobbyBoards(lobbyBoards);
             });
 
+            socket.on('lobby:boardJoined', (data) => {
+                if (data.userId === userId && data.target === 'self') {
+                    showCollabToast(`You joined board ${data.boardId}`);
+                    return;
+                }
+                if (data.target === 'host') {
+                    const username = data.username || `User-${data.userId?.slice?.(0,5)}`;
+                    showCollabToast(`${username} joined board ${data.boardId}`);
+                }
+            });
+
             socket.on('lobby:userJoinedBoard', (data) => {
                 if (data.userId === userId) {
                     showCollabToast(`You were added to board ${data.boardId}`);
@@ -168,6 +179,18 @@
         const lobbyBoards = [];
         let selectedLobbyInvite = null;
 
+        function getBoardMemberCount(board) {
+            return Array.isArray(board.members) ? board.members.length : 0;
+        }
+
+        function isBoardMember(board) {
+            return Array.isArray(board.members) && board.members.includes(userId);
+        }
+
+        function isBoardOwner(board) {
+            return board.owner === userId;
+        }
+
         function openLobbyPage() {
             if (lobbyPanel) lobbyPanel.classList.remove('hidden');
             document.body.classList.add('lobby-visible');
@@ -189,13 +212,88 @@
                 updateLobbyUsers(Array.from(remoteUsers.values()));
                 return;
             }
+
             boards.forEach(board => {
+                const memberCount = getBoardMemberCount(board);
+                const owner = board.owner === userId;
+                const joined = isBoardMember(board);
                 const row = document.createElement('div');
                 row.className = 'lobby-board-row';
-                row.innerHTML = `<div><strong>${board.name}</strong></div><div class="lobby-board-id">${board.id}</div>`;
+
+                const details = document.createElement('div');
+                details.className = 'lobby-board-details';
+                details.innerHTML = `
+                    <div class="board-main">
+                        <strong>${board.name}</strong>
+                        <span class="board-meta-text">${board.id}</span>
+                    </div>
+                    <div class="board-status-label">Players: ${memberCount}</div>
+                `;
+                row.appendChild(details);
+
+                const actions = document.createElement('div');
+                actions.className = 'lobby-board-actions';
+
+                if (!joined) {
+                    const joinBtn = document.createElement('button');
+                    joinBtn.type = 'button';
+                    joinBtn.className = 'lobby-join-btn';
+                    joinBtn.textContent = 'Join lobby';
+                    joinBtn.addEventListener('click', () => lobbyRequestJoinBoard(board.id));
+                    actions.appendChild(joinBtn);
+                } else {
+                    const label = document.createElement('span');
+                    label.className = 'lobby-joined-label';
+                    label.textContent = owner ? 'Host' : 'Joined';
+                    actions.appendChild(label);
+                }
+
+                const soloBtn = document.createElement('button');
+                soloBtn.type = 'button';
+                soloBtn.className = 'lobby-solo-btn';
+                soloBtn.textContent = 'Solo mode';
+                soloBtn.addEventListener('click', () => lobbyStartBoard(board.id, true));
+                actions.appendChild(soloBtn);
+
+                if (owner) {
+                    const startBtn = document.createElement('button');
+                    startBtn.type = 'button';
+                    startBtn.className = 'lobby-start-btn';
+                    startBtn.textContent = 'Start board';
+                    startBtn.disabled = memberCount < 2;
+                    startBtn.title = memberCount < 2 ? 'Need 2 or more players to start' : 'Start with joined players';
+                    startBtn.addEventListener('click', () => lobbyStartBoard(board.id, false));
+                    actions.appendChild(startBtn);
+                }
+
+                row.appendChild(actions);
                 lobbyBoardsWrap.appendChild(row);
             });
             updateLobbyUsers(Array.from(remoteUsers.values()));
+        }
+
+        function lobbyRequestJoinBoard(boardId) {
+            if (!socket || !socket.connected) {
+                showCollabToast('Cannot join lobby while offline.');
+                return;
+            }
+            socket.emit('lobby:requestJoinBoard', { boardId });
+        }
+
+        function lobbyStartBoard(boardId, soloMode = false) {
+            const board = lobbyBoards.find(b => b.id === boardId);
+            if (!board) {
+                showCollabToast('Board not found.');
+                return;
+            }
+            const memberCount = getBoardMemberCount(board);
+            if (!soloMode && memberCount < 2) {
+                showCollabToast('You must wait for 2 or more players before starting.');
+                return;
+            }
+            closeLobbyPage();
+            if (!playMode) enterPlayMode();
+            showCollabToast(soloMode ? 'Started solo mode' : `Started board "${board.name}" with ${memberCount} player(s)`);
         }
 
         function updateLobbyUsers(users) {
@@ -258,7 +356,7 @@
 
         function onCreateBoardClick() {
             const name = prompt('Board name') || `Board ${Date.now()}`;
-            const board = { id: 'board-' + Date.now(), name, owner: userId };
+            const board = { id: 'board-' + Date.now(), name, owner: userId, members: [userId] };
             lobbyBoards.push(board);
             if (socket && socket.connected) socket.emit('lobby:createBoard', board);
             updateLobbyBoards(lobbyBoards);
