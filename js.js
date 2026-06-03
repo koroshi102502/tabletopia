@@ -176,7 +176,7 @@
                     if (!data || !data.entryId) return;
                     // don't create if we already have it
                     if (document.querySelector(`[data-entry-id="${data.entryId}"]`)) return;
-                    const p = createPiece(data.type, data.label, data.image, data.sides, data.entryId);
+                    const p = createPiece(data.type, data.label, data.image, data.sides, data.entryId, data.stackId, data.stackIndex);
                     if (data.left) p.style.left = data.left;
                     if (data.top) p.style.top = data.top;
                     if (data.width) p.style.width = data.width;
@@ -185,6 +185,10 @@
                     p.style.transform = `rotate(${p.dataset.rotation}deg)`;
                     if (data.opacity) p.style.opacity = data.opacity;
                     if (data.zIndex) p.style.zIndex = data.zIndex;
+                    if (data.diceValue && p.dataset.type === 'dice') {
+                        const valueEl = p.querySelector('.dice-value');
+                        if (valueEl) valueEl.textContent = data.diceValue;
+                    }
                 } catch (e) { }
             });
 
@@ -216,6 +220,18 @@
                         el.dataset.label = data.label;
                         const entry = document.getElementById(el.dataset.entryId);
                         if (entry) entry.textContent = data.label;
+                    }
+                } catch (e) { }
+            });
+
+            socket.on('dice:roll', (data) => {
+                try {
+                    if (!data || !data.entryId) return;
+                    const el = document.querySelector(`[data-entry-id="${data.entryId}"]`);
+                    if (!el || el.dataset.type !== 'dice') return;
+                    const valueEl = el.querySelector('.dice-value');
+                    if (valueEl) {
+                        valueEl.textContent = data.diceValue;
                     }
                 } catch (e) { }
             });
@@ -413,6 +429,8 @@
         function getCurrentLayout() {
             const pieces = Array.from(stage.querySelectorAll('.piece')).map(piece => ({
                 entryId: piece.dataset.entryId,
+                stackId: piece.dataset.stackId || null,
+                stackIndex: piece.dataset.stackIndex ? parseInt(piece.dataset.stackIndex, 10) : null,
                 type: piece.dataset.type,
                 label: piece.dataset.label,
                 left: piece.style.left,
@@ -423,7 +441,8 @@
                 opacity: piece.style.opacity,
                 zIndex: piece.style.zIndex,
                 image: piece.querySelector('img')?.src || null,
-                sides: piece.dataset.sides || null
+                sides: piece.dataset.sides || null,
+                diceValue: piece.querySelector('.dice-value')?.textContent || null
             }));
             return {
                 boardColor: boardColor.value,
@@ -614,6 +633,7 @@
         const boardColor = document.getElementById('boardColor');
         const componentType = document.getElementById('componentType');
         const componentName = document.getElementById('componentName');
+        const stackCountInput = document.getElementById('stackCountInput');
         const componentImageInput = document.getElementById('componentImageInput');
         const addComponentBtn = document.getElementById('addComponentBtn');
         const componentList = document.getElementById('componentList');
@@ -785,7 +805,7 @@
             // recreate pieces
                 if (Array.isArray(config.pieces)) {
                 config.pieces.forEach(p => {
-                            const piece = createPiece(p.type, p.label, p.image, p.sides, p.entryId);
+                                const piece = createPiece(p.type, p.label, p.image, p.sides, p.entryId, p.stackId, p.stackIndex);
                     // restore transform/position/size
                     if (p.left) piece.style.left = p.left;
                     if (p.top) piece.style.top = p.top;
@@ -796,6 +816,10 @@
                     piece.style.transform = `rotate(${rotation}deg)`;
                     if (p.opacity) piece.style.opacity = p.opacity;
                     if (p.zIndex) piece.style.zIndex = p.zIndex;
+                    if (p.diceValue && piece.dataset.type === 'dice') {
+                        const valueEl = piece.querySelector('.dice-value');
+                        if (valueEl) valueEl.textContent = p.diceValue;
+                    }
                 });
             }
         }
@@ -973,6 +997,15 @@
                         const final = Math.floor(Math.random() * sides) + 1;
                         valueEl.textContent = String(final);
                         piece.classList.remove('rolling');
+                        if (socket && socket.connected) {
+                            socket.emit('dice:roll', {
+                                entryId: piece.dataset.entryId,
+                                diceValue: String(final)
+                            });
+                        }
+                        if (lastCreatedBoardId && socket && socket.connected) {
+                            lobbyPublishBoard(lastCreatedBoardId);
+                        }
                     } else {
                         const interim = Math.floor(Math.random() * sides) + 1;
                         valueEl.textContent = String(interim);
@@ -1017,11 +1050,13 @@
             piece.classList.toggle('flipped');
         }
 
-        function createPiece(type, label, imageSrc, sides, entryId) {
+        function createPiece(type, label, imageSrc, sides, entryId, stackId, stackIndex) {
             const piece = document.createElement('div');
             piece.className = 'piece piece--' + type;
             piece.dataset.type = type;
             piece.dataset.label = label;
+            if (stackId) piece.dataset.stackId = stackId;
+            if (stackIndex) piece.dataset.stackIndex = String(stackIndex);
             if (type === 'dice') piece.dataset.sides = String(sides || 6);
             piece.style.width = '100px';
             piece.style.height = type === 'card' ? '140px' : '100px';
@@ -1079,6 +1114,8 @@
             if (!entryId && socket && socket.connected) {
                 const payload = {
                     entryId: piece.dataset.entryId,
+                    stackId: piece.dataset.stackId || null,
+                    stackIndex: piece.dataset.stackIndex ? parseInt(piece.dataset.stackIndex, 10) : null,
                     type: type,
                     label: label,
                     image: imageSrc || null,
@@ -1089,7 +1126,8 @@
                     height: piece.style.height,
                     rotation: piece.dataset.rotation || '0',
                     opacity: piece.style.opacity,
-                    zIndex: piece.style.zIndex
+                    zIndex: piece.style.zIndex,
+                    diceValue: piece.querySelector('.dice-value')?.textContent || null
                 };
                 socket.emit('piece:create', payload);
             }
@@ -1373,13 +1411,24 @@
             const label = componentName.value.trim() || `${type.charAt(0).toUpperCase() + type.slice(1)}`;
             const file = componentImageInput.files[0];
             const sides = componentType.value === 'dice' ? parseInt(diceSidesSelect.value, 10) : undefined;
+            const stackCount = Math.max(1, Math.min(50, parseInt(stackCountInput.value, 10) || 1));
+
+            const createStack = (imageData) => {
+                const stackId = stackCount > 1 ? `stack-${Date.now()}-${Math.random().toString(36).slice(2)}` : null;
+                for (let i = 0; i < stackCount; i += 1) {
+                    const delta = i * 8;
+                    const piece = createPiece(type, label, imageData, sides, null, stackId, i + 1);
+                    piece.style.left = `${80 + delta}px`;
+                    piece.style.top = `${80 + delta}px`;
+                }
+            };
 
             if (file) {
                 const reader = new FileReader();
-                reader.onload = () => createPiece(type, label, reader.result, sides);
+                reader.onload = () => createStack(reader.result);
                 reader.readAsDataURL(file);
             } else {
-                createPiece(type, label, null, sides);
+                createStack(null);
             }
             componentName.value = '';
             componentImageInput.value = '';

@@ -115,6 +115,14 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('piece:update', Object.assign({}, data, { userId: socket.id }));
     });
 
+    // Handle dice roll result
+    socket.on('dice:roll', (data) => {
+        socket.broadcast.emit('dice:roll', Object.assign({}, data, {
+            userId: socket.id,
+            username: users.get(socket.id)?.username || 'User'
+        }));
+    });
+
     // Handle piece click/select
     socket.on('piece:select', (data) => {
         socket.broadcast.emit('piece:select', {
