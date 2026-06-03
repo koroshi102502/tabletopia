@@ -40,17 +40,41 @@
                 }
                 updateLobbyBoards(lobbyBoards);
                 showCollabToast(`Connected! Your color: ${userColor}`);
+
+                // Prompt for display name once connected
+                setTimeout(() => {
+                    try {
+                        const name = prompt('Enter your display name', `User-${userId.slice(0,5)}`);
+                        if (name && name.trim()) {
+                            socket.emit('user:setName', { name: name.trim() });
+                        }
+                    } catch (e) {
+                        // ignore (prompt may be blocked in some contexts)
+                    }
+                }, 200);
             });
 
             socket.on('lobby:boards', (boardsFromServer) => {
                 lobbyBoards.length = 0;
                 if (Array.isArray(boardsFromServer)) boardsFromServer.forEach(b => lobbyBoards.push(b));
                 updateLobbyBoards(lobbyBoards);
+                // If we're currently on a board, and server provided updated data for it, reload
+                if (typeof currentBoardId !== 'undefined' && currentBoardId) {
+                    const current = lobbyBoards.find(b => b.id === currentBoardId);
+                    if (current && current.data) {
+                        loadLayout(current.data);
+                    }
+                }
             });
 
             socket.on('lobby:boardJoined', (data) => {
                 if (data.userId === userId && data.target === 'self') {
                     showCollabToast(`You joined board ${data.boardId}`);
+                    // load board data if provided
+                    if (data.boardData) {
+                        currentBoardId = data.boardId;
+                        loadLayout(data.boardData);
+                    }
                     return;
                 }
                 if (data.target === 'host') {
@@ -62,6 +86,10 @@
             socket.on('lobby:userJoinedBoard', (data) => {
                 if (data.userId === userId) {
                     showCollabToast(`You were added to board ${data.boardId}`);
+                    if (data.boardData) {
+                        currentBoardId = data.boardId;
+                        loadLayout(data.boardData);
+                    }
                     return;
                 }
                 if (data.target === 'host') {
@@ -95,6 +123,14 @@
                 });
                 updateUserList(Array.from(remoteUsers.values()));
                 showCollabToast(`${data.username} joined!`);
+            });
+
+            socket.on('user:updated', (data) => {
+                // update username change
+                const u = remoteUsers.get(data.userId) || { id: data.userId };
+                u.username = data.username;
+                remoteUsers.set(data.userId, u);
+                updateUserList(Array.from(remoteUsers.values()));
             });
             
             socket.on('user:left', (data) => {
@@ -178,6 +214,8 @@
 
         const lobbyBoards = [];
         let selectedLobbyInvite = null;
+        let currentBoardId = null;
+        let lastCreatedBoardId = null;
 
         function getBoardMemberCount(board) {
             return Array.isArray(board.members) ? board.members.length : 0;
@@ -280,6 +318,35 @@
             socket.emit('lobby:requestJoinBoard', { boardId });
         }
 
+        function getCurrentLayout() {
+            const pieces = Array.from(stage.querySelectorAll('.piece')).map(piece => ({
+                type: piece.dataset.type,
+                label: piece.dataset.label,
+                left: piece.style.left,
+                top: piece.style.top,
+                width: piece.style.width,
+                height: piece.style.height,
+                rotation: piece.dataset.rotation || '0',
+                opacity: piece.style.opacity,
+                zIndex: piece.style.zIndex,
+                image: piece.querySelector('img')?.src || null,
+                sides: piece.dataset.sides || null
+            }));
+            return {
+                boardColor: boardColor.value,
+                hasBackgroundImage: stageInner.style.backgroundImage !== 'none',
+                boardBackground: stageInner.style.backgroundImage ? stageInner.style.backgroundImage.slice(5, -2) : null,
+                pieces
+            };
+        }
+
+        function lobbyPublishBoard(boardId) {
+            if (!socket || !socket.connected) return;
+            if (!boardId) return;
+            const data = getCurrentLayout();
+            socket.emit('lobby:publishBoard', { boardId, boardData: data });
+        }
+
         function lobbyStartBoard(boardId, soloMode = false) {
             const board = lobbyBoards.find(b => b.id === boardId);
             if (!board) {
@@ -358,7 +425,14 @@
             const name = prompt('Board name') || `Board ${Date.now()}`;
             const board = { id: 'board-' + Date.now(), name, owner: userId, members: [userId] };
             lobbyBoards.push(board);
-            if (socket && socket.connected) socket.emit('lobby:createBoard', board);
+            lastCreatedBoardId = board.id;
+            // publish initial board layout
+            if (socket && socket.connected) {
+                socket.emit('lobby:createBoard', board);
+                setTimeout(() => {
+                    lobbyPublishBoard(board.id);
+                }, 250);
+            }
             updateLobbyBoards(lobbyBoards);
             showCollabToast(`Created board "${board.name}"`);
         }
@@ -860,6 +934,11 @@
             addListEntry(piece);
             selectPiece(piece);
 
+            // publish new board state if we created the board
+            if (lastCreatedBoardId && socket && socket.connected) {
+                setTimeout(() => lobbyPublishBoard(lastCreatedBoardId), 120);
+            }
+
             return piece;
         }
 
@@ -1032,6 +1111,10 @@
                 dragState = null;
                 document.removeEventListener('pointermove', pointerMove);
                 document.removeEventListener('pointerup', pointerUp);
+                // publish updated layout if we are the host of a created board
+                if (lastCreatedBoardId && socket && socket.connected) {
+                    lobbyPublishBoard(lastCreatedBoardId);
+                }
             }
 
             document.addEventListener('pointermove', pointerMove);
@@ -1078,6 +1161,9 @@
             selectedPiece.remove();
             selectedPiece = null;
             selectPiece(null);
+            if (lastCreatedBoardId && socket && socket.connected) {
+                setTimeout(() => lobbyPublishBoard(lastCreatedBoardId), 80);
+            }
         });
 
         addComponentBtn.addEventListener('click', () => {

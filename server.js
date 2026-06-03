@@ -78,6 +78,17 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Allow clients to set their username
+    socket.on('user:setName', (data) => {
+        const name = (data && data.name) ? String(data.name).slice(0, 64) : null;
+        if (name && users.has(socket.id)) {
+            const u = users.get(socket.id);
+            u.username = name;
+            users.set(socket.id, u);
+            io.emit('user:updated', { userId: socket.id, username: name });
+        }
+    });
+
     // Handle piece drag
     socket.on('piece:drag', (data) => {
         socket.broadcast.emit('piece:drag', {
@@ -135,10 +146,10 @@ io.on('connection', (socket) => {
             color: targetUser ? targetUser.color : '#888'
         };
         if (board.owner && board.owner !== targetId) {
-            io.to(board.owner).emit('lobby:userJoinedBoard', { ...payload, target: 'host' });
+            io.to(board.owner).emit('lobby:userJoinedBoard', { ...payload, target: 'host', boardData: board.data || null });
         }
         if (targetId) {
-            io.to(targetId).emit('lobby:userJoinedBoard', { ...payload, target: 'self' });
+            io.to(targetId).emit('lobby:userJoinedBoard', { ...payload, target: 'self', boardData: board.data || null });
         }
     });
 
@@ -157,9 +168,21 @@ io.on('connection', (socket) => {
             color: users.get(socket.id).color
         };
         if (board.owner && board.owner !== socket.id) {
-            io.to(board.owner).emit('lobby:boardJoined', { ...payload, target: 'host' });
+            io.to(board.owner).emit('lobby:boardJoined', { ...payload, target: 'host', boardData: board.data || null });
         }
-        socket.emit('lobby:boardJoined', { ...payload, target: 'self' });
+        socket.emit('lobby:boardJoined', { ...payload, target: 'self', boardData: board.data || null });
+    });
+
+    // Lobby: host publishes full board data (layout/config)
+    socket.on('lobby:publishBoard', (data) => {
+        // data: { boardId, boardData }
+        if (!data || !data.boardId) return;
+        const board = boards.find(b => b.id === data.boardId);
+        if (!board) return;
+        // Only the owner may publish (best-effort)
+        if (board.owner && board.owner !== socket.id) return;
+        board.data = data.boardData || null;
+        broadcastBoards();
     });
 
     // Handle disconnect
