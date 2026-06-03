@@ -84,7 +84,8 @@
                 if (typeof currentBoardId !== 'undefined' && currentBoardId) {
                     const current = lobbyBoards.find(b => b.id === currentBoardId);
                     if (current && current.data) {
-                        loadLayout(current.data);
+                        try { showLoading('Loading board...'); } catch(e){}
+                        try { loadLayout(current.data); } finally { try { hideLoading(); } catch(e){} }
                     }
                 }
             });
@@ -95,7 +96,8 @@
                     // load board data if provided
                     if (data.boardData) {
                         currentBoardId = data.boardId;
-                        loadLayout(data.boardData);
+                        try { showLoading('Downloading board...'); } catch(e){}
+                        try { loadLayout(data.boardData); } finally { try { hideLoading(); } catch(e){} }
                     }
                     return;
                 }
@@ -109,9 +111,9 @@
                 if (!data || !data.boardId) return;
                 // if this client was viewing the board, close it
                 if (currentBoardId === data.boardId || lastCreatedBoardId === data.boardId) {
-                    currentBoardId = null;
-                    lastCreatedBoardId = null;
+                    // clear UI and reset
                     if (playMode) exitPlayMode();
+                    clearBoard();
                     showCollabToast('Lobby ended by host');
                 }
             });
@@ -126,7 +128,8 @@
                     showCollabToast(`You were added to board ${data.boardId}`);
                     if (data.boardData) {
                         currentBoardId = data.boardId;
-                        loadLayout(data.boardData);
+                        try { showLoading('Downloading board...'); } catch(e){}
+                        try { loadLayout(data.boardData); } finally { try { hideLoading(); } catch(e){} }
                     }
                     return;
                 }
@@ -448,10 +451,10 @@
             if (!boardId) return;
             if (socket && socket.connected) socket.emit('lobby:leaveBoard', { boardId });
             // cleanup local state
-            currentBoardId = null;
-            lastCreatedBoardId = null;
             // close play if active
             if (playMode) exitPlayMode();
+            // clear UI and reset
+            clearBoard();
             closeLobbyPage();
             showCollabToast('Left lobby');
         }
@@ -695,6 +698,7 @@
         const lobbyCreateBtn = document.getElementById('lobbyCreateBtn');
         const importDataBtn = document.getElementById('importDataBtn');
         const importFileInput = document.getElementById('importFileInput');
+        const restoreBoardBtn = document.getElementById('restoreBoardBtn');
 
         let playMode = false;
         let playHud = null;
@@ -707,6 +711,7 @@
 
         let selectedPiece = null;
         let dragState = null;
+        let lastLoadedConfig = null;
 
         function setBoardDirty(isDirty) {
             boardNeedsSave = Boolean(isDirty);
@@ -726,6 +731,24 @@
                 saveBoardBtn.textContent = 'Save board';
                 saveBoardBtn.classList.add('saved');
             }
+        }
+
+        function showLoading(message) {
+            let overlay = document.getElementById('loadingOverlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'loadingOverlay';
+                overlay.className = 'loading-overlay';
+                overlay.innerHTML = `<div class="spinner"></div><div class="loading-message"></div>`;
+                document.body.appendChild(overlay);
+            }
+            overlay.querySelector('.loading-message').textContent = message || 'Loading...';
+            overlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) overlay.style.display = 'none';
         }
         let zIndexCounter = 1;
         const selectedDiceSidesWrap = document.getElementById('selectedDiceSidesWrap');
@@ -825,6 +848,15 @@
         });
 
         function loadLayout(config) {
+            // keep copy of original loaded data for restore
+            try {
+                lastLoadedConfig = config ? JSON.parse(JSON.stringify(config)) : null;
+            } catch (e) {
+                lastLoadedConfig = config || null;
+            }
+            if (lastLoadedConfig && typeof restoreBoardBtn !== 'undefined' && restoreBoardBtn) {
+                restoreBoardBtn.disabled = false;
+            }
             // apply board color
             if (config.boardColor) {
                 boardColor.value = config.boardColor;
@@ -873,6 +905,27 @@
                     }
                 });
             }
+        }
+
+        function clearBoard() {
+            // remove pieces from DOM and component list
+            stageInner.querySelectorAll('.piece').forEach(piece => piece.remove());
+            componentList.innerHTML = '';
+            selectedPiece = null;
+            selectPiece(null);
+            // reset board visuals
+            stageInner.style.backgroundImage = 'none';
+            boardPreviewImage.src = '';
+            boardPreviewImage.style.display = 'none';
+            boardPreviewNoImage.style.display = 'block';
+            boardColor.value = '#3a5f58';
+            applyBoardStyles();
+            currentBoardId = null;
+            lastCreatedBoardId = null;
+            setBoardDirty(false);
+            if (saveBoardBtn) saveBoardBtn.disabled = true;
+            if (typeof restoreBoardBtn !== 'undefined' && restoreBoardBtn) restoreBoardBtn.disabled = true;
+            lastLoadedConfig = null;
         }
 
         function enterPlayMode() {
@@ -1509,6 +1562,21 @@
                 });
                 setBoardDirty(false);
                 showCollabToast('Board saved and published.');
+            });
+        }
+
+        if (restoreBoardBtn) {
+            restoreBoardBtn.addEventListener('click', () => {
+                if (!lastLoadedConfig) {
+                    showCollabToast('No original board data to restore.');
+                    return;
+                }
+                try { showLoading('Restoring board...'); } catch(e){}
+                try {
+                    loadLayout(lastLoadedConfig);
+                    setBoardDirty(false);
+                    showCollabToast('Board restored to original loaded state.');
+                } finally { try { hideLoading(); } catch(e){} }
             });
         }
 
