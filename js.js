@@ -603,44 +603,16 @@
             const board = { id: 'board-' + Date.now(), name, owner: userId, members: [userId] };
             lobbyBoards.push(board);
             lastCreatedBoardId = board.id;
-            // publish initial board layout
+            // create board on server and immediately publish the creator's current layout
             if (socket && socket.connected) {
                 socket.emit('lobby:createBoard', board);
+                // publish current layout (take local stage as the authoritative initial board)
                 setTimeout(() => {
                     lobbyPublishBoard(board.id);
-                }, 250);
+                }, 200);
             }
             updateLobbyBoards(lobbyBoards);
-            showCollabToast(`Created board "${board.name}"`);
-            // Ask user to import a layout for this new board
-            const file = prompt('If you have a layout file path paste it here, otherwise press Cancel to pick a file manually');
-            // We will open the import file picker instead of relying on path
-            importFileInput.click();
-            importFileInput.onchange = (event) => {
-                const f = event.target.files[0];
-                if (!f) return;
-                const reader = new FileReader();
-                reader.onload = async () => {
-                    try {
-                        const config = JSON.parse(reader.result);
-                        // load locally
-                        try { showLoading('Importing layout...'); } catch(e){}
-                        try { await loadLayout(config, { source: 'local' }); } finally { try { hideLoading(); } catch(e){} }
-                        // publish to server as board data
-                        if (socket && socket.connected) {
-                            socket.emit('lobby:createBoard', board);
-                            setTimeout(() => lobbyPublishBoard(board.id), 200);
-                        }
-                        showCollabToast('Imported layout and published to lobby');
-                        // clear input handler
-                        importFileInput.onchange = null;
-                        importFileInput.value = '';
-                    } catch (err) {
-                        alert('Invalid layout file: ' + err.message);
-                    }
-                };
-                reader.readAsText(f);
-            };
+            showCollabToast(`Created board "${board.name}" and published current layout`);
         }
 
         function openLobbyConfirm(user, boardId) {
