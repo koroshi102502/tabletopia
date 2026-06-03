@@ -857,6 +857,18 @@
             if (lastLoadedConfig && typeof restoreBoardBtn !== 'undefined' && restoreBoardBtn) {
                 restoreBoardBtn.disabled = false;
             }
+            // mark board as needing save (unless we're just loading from server)
+            // if we are currently the owner of a created board, auto-publish so joiners receive the layout
+            try {
+                const ownerBoardId = lastCreatedBoardId || currentBoardId;
+                if (ownerBoardId && socket && socket.connected) {
+                    // publish current layout to server so other players can access it
+                    lobbyPublishBoard(ownerBoardId);
+                    showCollabToast('Published layout to lobby');
+                }
+            } catch (e) {
+                // ignore publish errors
+            }
             // apply board color
             if (config.boardColor) {
                 boardColor.value = config.boardColor;
