@@ -194,6 +194,14 @@ io.on('connection', (socket) => {
             io.to(board.owner).emit('lobby:boardJoined', { ...payload, target: 'host', boardData: board.data || null });
         }
         socket.emit('lobby:boardJoined', { ...payload, target: 'self', boardData: board.data || null });
+        // If the board has no published data yet, ask the owner to provide the current layout so the joiner can receive it
+        if ((!board.data || board.data === null) && board.owner && board.owner !== socket.id) {
+            try {
+                io.to(board.owner).emit('lobby:requestBoardData', { requesterId: socket.id, boardId: board.id });
+            } catch (e) {
+                // ignore
+            }
+        }
     });
 
     // Lobby: leave board
@@ -245,6 +253,26 @@ io.on('connection', (socket) => {
                     // ignore per-member errors
                 }
             });
+        } catch (e) {
+            // ignore
+        }
+    });
+
+    // Owner can send board data directly to a specific client (in response to a request)
+    socket.on('lobby:sendBoardData', (data) => {
+        // data: { targetId, boardId, boardData }
+        if (!data || !data.boardId) return;
+        const board = boards.find(b => b.id === data.boardId);
+        if (!board) return;
+        // Only accept sendBoardData from the owner (best-effort check)
+        if (board.owner && board.owner !== socket.id) return;
+        // store the board data and notify members
+        board.data = data.boardData || null;
+        broadcastBoards();
+        try {
+            if (data.targetId) {
+                io.to(data.targetId).emit('lobby:boardPublished', { boardId: board.id, boardData: board.data });
+            }
         } catch (e) {
             // ignore
         }

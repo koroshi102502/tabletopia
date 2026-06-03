@@ -119,6 +119,26 @@
                 }
             });
 
+            // Owner was asked to provide board data for a joiner
+            socket.on('lobby:requestBoardData', (data) => {
+                // data: { requesterId, boardId }
+                try {
+                    const requesterId = data && data.requesterId;
+                    const boardId = data && data.boardId;
+                    // If this client is the owner of the requested board, send current layout directly to the requester
+                    if ((lastCreatedBoardId === boardId || currentBoardId === boardId) && socket && socket.connected) {
+                        const payload = {
+                            targetId: requesterId,
+                            boardId: boardId,
+                            boardData: getCurrentLayout()
+                        };
+                        socket.emit('lobby:sendBoardData', payload);
+                    }
+                } catch (e) {
+                    /* ignore */
+                }
+            });
+
             socket.on('lobby:ended', (data) => {
                 if (!data || !data.boardId) return;
                 // if this client was viewing the board, close it
