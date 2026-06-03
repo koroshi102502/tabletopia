@@ -8,9 +8,34 @@
         let socket = null;
         let userId = null;
         let userColor = null;
+        let displayName = null;
+        let boardNeedsSave = false;
         const remoteUsers = new Map();
         const remoteCursors = new Map();
         
+        function setDisplayName(name) {
+            if (!name) return;
+            displayName = name.trim();
+            localStorage.setItem('tabletopiaUsername', displayName);
+            if (socket && socket.connected) {
+                socket.emit('user:setName', { name: displayName });
+            }
+        }
+
+        function maybeRequestName() {
+            if (displayName) return;
+            setTimeout(() => {
+                try {
+                    const name = prompt('Enter your display name', `User-${userId.slice(0,5)}`);
+                    if (name && name.trim()) {
+                        setDisplayName(name);
+                    }
+                } catch (e) {
+                    // ignore (prompt may be blocked in some contexts)
+                }
+            }, 200);
+        }
+
         // Try to connect to WebSocket server
         if (typeof io !== 'undefined') {
             socket = io();
@@ -41,17 +66,14 @@
                 updateLobbyBoards(lobbyBoards);
                 showCollabToast(`Connected! Your color: ${userColor}`);
 
-                // Prompt for display name once connected
-                setTimeout(() => {
-                    try {
-                        const name = prompt('Enter your display name', `User-${userId.slice(0,5)}`);
-                        if (name && name.trim()) {
-                            socket.emit('user:setName', { name: name.trim() });
-                        }
-                    } catch (e) {
-                        // ignore (prompt may be blocked in some contexts)
-                    }
-                }, 200);
+                if (!displayName) {
+                    displayName = localStorage.getItem('tabletopiaUsername');
+                }
+                if (displayName) {
+                    setDisplayName(displayName);
+                } else {
+                    maybeRequestName();
+                }
             });
 
             socket.on('lobby:boards', (boardsFromServer) => {
@@ -234,6 +256,14 @@
                         valueEl.textContent = data.diceValue;
                     }
                 } catch (e) { }
+            });
+
+            socket.on('board:update', (data) => {
+                if (!data || !data.update) return;
+                const username = remoteUsers.get(data.userId)?.username || data.username || `User-${data.userId?.slice?.(0,5)}`;
+                if (data.update.message) {
+                    showCollabToast(`${username}: ${data.update.message}`);
+                }
             });
             
             socket.on('piece:select', (data) => {
@@ -636,6 +666,7 @@
         const stackCountInput = document.getElementById('stackCountInput');
         const componentImageInput = document.getElementById('componentImageInput');
         const addComponentBtn = document.getElementById('addComponentBtn');
+        const saveBoardBtn = document.getElementById('saveBoardBtn');
         const componentList = document.getElementById('componentList');
         const selectedInfo = document.getElementById('selectedInfo');
         const sizeSlider = document.getElementById('sizeSlider');
@@ -676,6 +707,26 @@
 
         let selectedPiece = null;
         let dragState = null;
+
+        function setBoardDirty(isDirty) {
+            boardNeedsSave = Boolean(isDirty);
+            if (saveBoardBtn) saveBoardBtn.disabled = !boardNeedsSave;
+        }
+
+        function isBoardBeingEdited() {
+            return Boolean((currentBoardId || lastCreatedBoardId) && !playMode);
+        }
+
+        function boardSaveSummary() {
+            if (!saveBoardBtn) return;
+            if (boardNeedsSave) {
+                saveBoardBtn.textContent = 'Save board';
+                saveBoardBtn.classList.remove('saved');
+            } else {
+                saveBoardBtn.textContent = 'Save board';
+                saveBoardBtn.classList.add('saved');
+            }
+        }
         let zIndexCounter = 1;
         const selectedDiceSidesWrap = document.getElementById('selectedDiceSidesWrap');
         const selectedDiceSides = document.getElementById('selectedDiceSides');
@@ -747,9 +798,9 @@
         const changeNameBtn = document.getElementById('changeNameBtn');
         if (lobbyCreateBtn) lobbyCreateBtn.addEventListener('click', onCreateBoardClick);
         if (changeNameBtn) changeNameBtn.addEventListener('click', () => {
-            const name = prompt('Change display name', '');
-            if (name && name.trim() && socket && socket.connected) {
-                socket.emit('user:setName', { name: name.trim() });
+            const name = prompt('Change display name', displayName || '');
+            if (name && name.trim()) {
+                setDisplayName(name.trim());
                 showCollabToast('Name updated');
             }
         });
@@ -1110,8 +1161,8 @@
             const entry = addListEntry(piece, entryId);
             selectPiece(piece);
 
-            // emit piece:create so others can create the same piece (only for locally-created pieces)
-            if (!entryId && socket && socket.connected) {
+            // emit piece:create only in play mode; in edit mode board updates happen on explicit save
+            if (!entryId && socket && socket.connected && playMode) {
                 const payload = {
                     entryId: piece.dataset.entryId,
                     stackId: piece.dataset.stackId || null,
@@ -1132,9 +1183,8 @@
                 socket.emit('piece:create', payload);
             }
 
-            // publish new board state if we created the board
-            if (lastCreatedBoardId && socket && socket.connected) {
-                setTimeout(() => lobbyPublishBoard(lastCreatedBoardId), 120);
+            if (isBoardBeingEdited()) {
+                setBoardDirty(true);
             }
 
             return piece;
@@ -1309,7 +1359,7 @@
                 dragState.piece.style.top = Math.max(0, Math.min(maxTop, y)) + 'px';
                 
                 // ============ COLLABORATION: Broadcast piece drag ============
-                if (socket && socket.connected) {
+                if (playMode && socket && socket.connected) {
                     pendingDrag = {
                         pieceId: dragState.piece.dataset.entryId,
                         x: dragState.piece.style.left,
@@ -1329,8 +1379,9 @@
                 }
                 document.removeEventListener('pointermove', pointerMove);
                 document.removeEventListener('pointerup', pointerUp);
-                // publish updated layout if we are the host of a created board
-                if (lastCreatedBoardId && socket && socket.connected) {
+                if (isBoardBeingEdited()) {
+                    setBoardDirty(true);
+                } else if (lastCreatedBoardId && socket && socket.connected) {
                     lobbyPublishBoard(lastCreatedBoardId);
                 }
             }
@@ -1349,8 +1400,9 @@
             selectedPiece.style.transform = `rotate(${rotateSlider.value}deg)`;
             selectedPiece.style.opacity = opacitySlider.value / 100;
 
-            // broadcast update
-            if (socket && socket.connected && selectedPiece && selectedPiece.dataset.entryId) {
+            if (isBoardBeingEdited()) {
+                setBoardDirty(true);
+            } else if (socket && socket.connected && selectedPiece && selectedPiece.dataset.entryId) {
                 socket.emit('piece:update', {
                     entryId: selectedPiece.dataset.entryId,
                     width: selectedPiece.style.width,
@@ -1377,7 +1429,9 @@
         bringFrontBtn.addEventListener('click', () => {
             if (!selectedPiece) return;
             selectedPiece.style.zIndex = ++zIndexCounter;
-            if (socket && socket.connected && selectedPiece.dataset.entryId) {
+            if (isBoardBeingEdited()) {
+                setBoardDirty(true);
+            } else if (socket && socket.connected && selectedPiece.dataset.entryId) {
                 socket.emit('piece:update', { entryId: selectedPiece.dataset.entryId, zIndex: selectedPiece.style.zIndex });
             }
         });
@@ -1385,15 +1439,18 @@
         sendBackBtn.addEventListener('click', () => {
             if (!selectedPiece) return;
             selectedPiece.style.zIndex = 1;
-            if (socket && socket.connected && selectedPiece.dataset.entryId) {
+            if (isBoardBeingEdited()) {
+                setBoardDirty(true);
+            } else if (socket && socket.connected && selectedPiece.dataset.entryId) {
                 socket.emit('piece:update', { entryId: selectedPiece.dataset.entryId, zIndex: selectedPiece.style.zIndex });
             }
         });
 
         removeComponentBtn.addEventListener('click', () => {
             if (!selectedPiece) return;
-            // notify others
-            if (socket && socket.connected && selectedPiece.dataset.entryId) {
+            if (isBoardBeingEdited()) {
+                setBoardDirty(true);
+            } else if (socket && socket.connected && selectedPiece.dataset.entryId) {
                 socket.emit('piece:remove', { entryId: selectedPiece.dataset.entryId });
             }
             const entry = document.getElementById(selectedPiece.dataset.entryId);
@@ -1401,7 +1458,7 @@
             selectedPiece.remove();
             selectedPiece = null;
             selectPiece(null);
-            if (lastCreatedBoardId && socket && socket.connected) {
+            if (!currentBoardId && lastCreatedBoardId && socket && socket.connected) {
                 setTimeout(() => lobbyPublishBoard(lastCreatedBoardId), 80);
             }
         });
@@ -1433,6 +1490,27 @@
             componentName.value = '';
             componentImageInput.value = '';
         });
+
+        if (saveBoardBtn) {
+            saveBoardBtn.addEventListener('click', () => {
+                const boardId = currentBoardId || lastCreatedBoardId;
+                if (!boardId) {
+                    showCollabToast('No board selected to save.');
+                    return;
+                }
+                if (!socket || !socket.connected) {
+                    showCollabToast('Cannot save board while offline.');
+                    return;
+                }
+                lobbyPublishBoard(boardId);
+                socket.emit('board:update', {
+                    boardId,
+                    message: `${displayName || 'A player'} saved new changes to the board.`
+                });
+                setBoardDirty(false);
+                showCollabToast('Board saved and published.');
+            });
+        }
 
         stage.addEventListener('click', event => {
             if (event.target === stage || event.target === stageInner) selectPiece(null);
