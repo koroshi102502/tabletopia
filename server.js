@@ -100,6 +100,21 @@ io.on('connection', (socket) => {
         });
     });
 
+    // Handle piece create
+    socket.on('piece:create', (data) => {
+        socket.broadcast.emit('piece:create', Object.assign({}, data, { userId: socket.id }));
+    });
+
+    // Handle piece remove
+    socket.on('piece:remove', (data) => {
+        socket.broadcast.emit('piece:remove', Object.assign({}, data, { userId: socket.id }));
+    });
+
+    // Handle piece update (size/rotation/opacity/zIndex/label)
+    socket.on('piece:update', (data) => {
+        socket.broadcast.emit('piece:update', Object.assign({}, data, { userId: socket.id }));
+    });
+
     // Handle piece click/select
     socket.on('piece:select', (data) => {
         socket.broadcast.emit('piece:select', {

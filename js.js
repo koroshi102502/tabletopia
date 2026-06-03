@@ -160,7 +160,64 @@
             });
             
             socket.on('piece:drag', (data) => {
-                // Visual feedback for remote drag (optional)
+                // Apply remote piece position updates
+                try {
+                    const selector = `[data-entry-id="${data.pieceId}"]`;
+                    const piece = document.querySelector(selector);
+                    if (piece) {
+                        piece.style.left = data.x;
+                        piece.style.top = data.y;
+                    }
+                } catch (e) { /* ignore */ }
+            });
+
+            socket.on('piece:create', (data) => {
+                try {
+                    if (!data || !data.entryId) return;
+                    // don't create if we already have it
+                    if (document.querySelector(`[data-entry-id="${data.entryId}"]`)) return;
+                    const p = createPiece(data.type, data.label, data.image, data.sides, data.entryId);
+                    if (data.left) p.style.left = data.left;
+                    if (data.top) p.style.top = data.top;
+                    if (data.width) p.style.width = data.width;
+                    if (data.height) p.style.height = data.height;
+                    p.dataset.rotation = data.rotation || '0';
+                    p.style.transform = `rotate(${p.dataset.rotation}deg)`;
+                    if (data.opacity) p.style.opacity = data.opacity;
+                    if (data.zIndex) p.style.zIndex = data.zIndex;
+                } catch (e) { }
+            });
+
+            socket.on('piece:remove', (data) => {
+                try {
+                    if (!data || !data.entryId) return;
+                    const el = document.querySelector(`[data-entry-id="${data.entryId}"]`);
+                    if (el) {
+                        const entry = document.getElementById(el.dataset.entryId);
+                        if (entry) entry.remove();
+                        el.remove();
+                    }
+                } catch (e) { }
+            });
+
+            socket.on('piece:update', (data) => {
+                try {
+                    if (!data || !data.entryId) return;
+                    const el = document.querySelector(`[data-entry-id="${data.entryId}"]`);
+                    if (!el) return;
+                    if (data.left) el.style.left = data.left;
+                    if (data.top) el.style.top = data.top;
+                    if (data.width) el.style.width = data.width;
+                    if (data.height) el.style.height = data.height;
+                    if (data.rotation) { el.dataset.rotation = data.rotation; el.style.transform = `rotate(${data.rotation}deg)`; }
+                    if (data.opacity) el.style.opacity = data.opacity;
+                    if (data.zIndex) el.style.zIndex = data.zIndex;
+                    if (data.label) {
+                        el.dataset.label = data.label;
+                        const entry = document.getElementById(el.dataset.entryId);
+                        if (entry) entry.textContent = data.label;
+                    }
+                } catch (e) { }
             });
             
             socket.on('piece:select', (data) => {
@@ -355,6 +412,7 @@
 
         function getCurrentLayout() {
             const pieces = Array.from(stage.querySelectorAll('.piece')).map(piece => ({
+                entryId: piece.dataset.entryId,
                 type: piece.dataset.type,
                 label: piece.dataset.label,
                 left: piece.style.left,
@@ -715,7 +773,7 @@
             // recreate pieces
                 if (Array.isArray(config.pieces)) {
                 config.pieces.forEach(p => {
-                            const piece = createPiece(p.type, p.label, p.image, p.sides);
+                            const piece = createPiece(p.type, p.label, p.image, p.sides, p.entryId);
                     // restore transform/position/size
                     if (p.left) piece.style.left = p.left;
                     if (p.top) piece.style.top = p.top;
@@ -947,7 +1005,7 @@
             piece.classList.toggle('flipped');
         }
 
-        function createPiece(type, label, imageSrc, sides) {
+        function createPiece(type, label, imageSrc, sides, entryId) {
             const piece = document.createElement('div');
             piece.className = 'piece piece--' + type;
             piece.dataset.type = type;
@@ -1002,8 +1060,27 @@
             piece.appendChild(inner);
             stageInner.appendChild(piece);
             setupPiece(piece);
-            addListEntry(piece);
+            const entry = addListEntry(piece, entryId);
             selectPiece(piece);
+
+            // emit piece:create so others can create the same piece (only for locally-created pieces)
+            if (!entryId && socket && socket.connected) {
+                const payload = {
+                    entryId: piece.dataset.entryId,
+                    type: type,
+                    label: label,
+                    image: imageSrc || null,
+                    sides: sides || null,
+                    left: piece.style.left,
+                    top: piece.style.top,
+                    width: piece.style.width,
+                    height: piece.style.height,
+                    rotation: piece.dataset.rotation || '0',
+                    opacity: piece.style.opacity,
+                    zIndex: piece.style.zIndex
+                };
+                socket.emit('piece:create', payload);
+            }
 
             // publish new board state if we created the board
             if (lastCreatedBoardId && socket && socket.connected) {
@@ -1085,15 +1162,16 @@
             }
         }
 
-        function addListEntry(piece) {
+        function addListEntry(piece, id) {
             const entry = document.createElement('button');
             entry.type = 'button';
             entry.className = 'component-entry';
             entry.textContent = piece.dataset.label;
             entry.addEventListener('click', () => selectPiece(piece));
-            entry.id = `component-entry-${Date.now()}-${Math.random()}`;
+            entry.id = id || `component-entry-${Date.now()}-${Math.random()}`;
             piece.dataset.entryId = entry.id;
             componentList.appendChild(entry);
+            return entry;
         }
 
         function updateSizeSliderMax(piece) {
@@ -1201,6 +1279,18 @@
             selectedPiece.dataset.rotation = rotateSlider.value;
             selectedPiece.style.transform = `rotate(${rotateSlider.value}deg)`;
             selectedPiece.style.opacity = opacitySlider.value / 100;
+
+            // broadcast update
+            if (socket && socket.connected && selectedPiece && selectedPiece.dataset.entryId) {
+                socket.emit('piece:update', {
+                    entryId: selectedPiece.dataset.entryId,
+                    width: selectedPiece.style.width,
+                    height: selectedPiece.style.height,
+                    rotation: selectedPiece.dataset.rotation,
+                    opacity: selectedPiece.style.opacity,
+                    zIndex: selectedPiece.style.zIndex
+                });
+            }
         }
 
         sizeSlider.addEventListener('input', updateSelectedPiece);
@@ -1218,15 +1308,25 @@
         bringFrontBtn.addEventListener('click', () => {
             if (!selectedPiece) return;
             selectedPiece.style.zIndex = ++zIndexCounter;
+            if (socket && socket.connected && selectedPiece.dataset.entryId) {
+                socket.emit('piece:update', { entryId: selectedPiece.dataset.entryId, zIndex: selectedPiece.style.zIndex });
+            }
         });
 
         sendBackBtn.addEventListener('click', () => {
             if (!selectedPiece) return;
             selectedPiece.style.zIndex = 1;
+            if (socket && socket.connected && selectedPiece.dataset.entryId) {
+                socket.emit('piece:update', { entryId: selectedPiece.dataset.entryId, zIndex: selectedPiece.style.zIndex });
+            }
         });
 
         removeComponentBtn.addEventListener('click', () => {
             if (!selectedPiece) return;
+            // notify others
+            if (socket && socket.connected && selectedPiece.dataset.entryId) {
+                socket.emit('piece:remove', { entryId: selectedPiece.dataset.entryId });
+            }
             const entry = document.getElementById(selectedPiece.dataset.entryId);
             if (entry) entry.remove();
             selectedPiece.remove();
