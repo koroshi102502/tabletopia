@@ -76,7 +76,7 @@
                 }
             });
 
-            socket.on('lobby:boards', (boardsFromServer) => {
+            socket.on('lobby:boards', async (boardsFromServer) => {
                 lobbyBoards.length = 0;
                 if (Array.isArray(boardsFromServer)) boardsFromServer.forEach(b => lobbyBoards.push(b));
                 updateLobbyBoards(lobbyBoards);
@@ -85,19 +85,19 @@
                     const current = lobbyBoards.find(b => b.id === currentBoardId);
                     if (current && current.data) {
                         try { showLoading('Loading board...'); } catch(e){}
-                        try { loadLayout(current.data); } finally { try { hideLoading(); } catch(e){} }
+                        try { await loadLayout(current.data, { source: 'server' }); } finally { try { hideLoading(); } catch(e){} }
                     }
                 }
             });
 
-            socket.on('lobby:boardJoined', (data) => {
+            socket.on('lobby:boardJoined', async (data) => {
                 if (data.userId === userId && data.target === 'self') {
                     showCollabToast(`You joined board ${data.boardId}`);
                     // load board data if provided
                     if (data.boardData) {
                         currentBoardId = data.boardId;
                         try { showLoading('Downloading board...'); } catch(e){}
-                        try { loadLayout(data.boardData); } finally { try { hideLoading(); } catch(e){} }
+                        try { await loadLayout(data.boardData, { source: 'server' }); } finally { try { hideLoading(); } catch(e){} }
                     }
                     return;
                 }
@@ -108,14 +108,14 @@
             });
 
             // Owner-published board data arrived (push to all members)
-            socket.on('lobby:boardPublished', (data) => {
+            socket.on('lobby:boardPublished', async (data) => {
                 if (!data || !data.boardId) return;
                 // If we are a member or the target of this board, load it
                 // If we already have this board open, reload; otherwise set currentBoardId and load
                 if (!currentBoardId) currentBoardId = data.boardId;
                 if (data.boardData) {
                     try { showLoading('Applying published board...'); } catch (e) {}
-                    try { loadLayout(data.boardData); } finally { try { hideLoading(); } catch (e) {} }
+                    try { await loadLayout(data.boardData, { source: 'server' }); } finally { try { hideLoading(); } catch (e) {} }
                 }
             });
 
@@ -135,13 +135,13 @@
                 showCollabToast(`A player left lobby ${data.boardId}`);
             });
 
-            socket.on('lobby:userJoinedBoard', (data) => {
+            socket.on('lobby:userJoinedBoard', async (data) => {
                 if (data.userId === userId) {
                     showCollabToast(`You were added to board ${data.boardId}`);
                     if (data.boardData) {
                         currentBoardId = data.boardId;
                         try { showLoading('Downloading board...'); } catch(e){}
-                        try { loadLayout(data.boardData); } finally { try { hideLoading(); } catch(e){} }
+                        try { await loadLayout(data.boardData, { source: 'server' }); } finally { try { hideLoading(); } catch(e){} }
                     }
                     return;
                 }
@@ -600,11 +600,12 @@
                 const f = event.target.files[0];
                 if (!f) return;
                 const reader = new FileReader();
-                reader.onload = () => {
+                reader.onload = async () => {
                     try {
                         const config = JSON.parse(reader.result);
                         // load locally
-                        loadLayout(config);
+                        try { showLoading('Importing layout...'); } catch(e){}
+                        try { await loadLayout(config, { source: 'local' }); } finally { try { hideLoading(); } catch(e){} }
                         // publish to server as board data
                         if (socket && socket.connected) {
                             socket.emit('lobby:createBoard', board);
@@ -846,10 +847,11 @@
             const file = event.target.files[0];
             if (!file) return;
             const reader = new FileReader();
-            reader.onload = () => {
+            reader.onload = async () => {
                 try {
                     const config = JSON.parse(reader.result);
-                    loadLayout(config);
+                    try { showLoading('Importing layout...'); } catch(e){}
+                    try { await loadLayout(config, { source: 'local' }); } finally { try { hideLoading(); } catch(e){} }
                 } catch (err) {
                     alert('Invalid layout file: ' + err.message);
                 }
@@ -859,76 +861,102 @@
             importFileInput.value = '';
         });
 
-        function loadLayout(config) {
-            // keep copy of original loaded data for restore
-            try {
-                lastLoadedConfig = config ? JSON.parse(JSON.stringify(config)) : null;
-            } catch (e) {
-                lastLoadedConfig = config || null;
-            }
-            if (lastLoadedConfig && typeof restoreBoardBtn !== 'undefined' && restoreBoardBtn) {
-                restoreBoardBtn.disabled = false;
-            }
-            // mark board as needing save (unless we're just loading from server)
-            // if we are currently the owner of a created board, auto-publish so joiners receive the layout
-            try {
-                const ownerBoardId = lastCreatedBoardId || currentBoardId;
-                if (ownerBoardId && socket && socket.connected) {
-                    // publish current layout to server so other players can access it
-                    lobbyPublishBoard(ownerBoardId);
-                    showCollabToast('Published layout to lobby');
+        function loadLayout(config, options) {
+            const source = options && options.source ? options.source : 'local';
+            return new Promise((resolve) => {
+                // keep copy of original loaded data for restore
+                try {
+                    lastLoadedConfig = config ? JSON.parse(JSON.stringify(config)) : null;
+                } catch (e) {
+                    lastLoadedConfig = config || null;
                 }
-            } catch (e) {
-                // ignore publish errors
-            }
-            // apply board color
-            if (config.boardColor) {
-                boardColor.value = config.boardColor;
-                applyBoardStyles();
-            }
-            // apply board background
-            if (config.boardBackground) {
-                stageInner.style.backgroundImage = `url('${config.boardBackground}')`;
-                stageInner.style.backgroundSize = 'cover';
-                stageInner.style.backgroundPosition = 'center';
-                boardPreviewImage.src = config.boardBackground;
-                boardPreviewImage.style.display = 'block';
-                boardPreviewNoImage.style.display = 'none';
-            } else {
-                stageInner.style.backgroundImage = 'none';
-                boardPreviewImage.src = '';
-                boardPreviewImage.style.display = 'none';
-                boardPreviewNoImage.style.display = 'block';
-            }
-
-            // clear existing pieces and list
-            stageInner.querySelectorAll('.piece').forEach(piece => {
-                const entry = document.getElementById(piece.dataset.entryId);
-                if (entry) entry.remove();
-                piece.remove();
-            });
-            componentList.innerHTML = '';
-
-            // recreate pieces
-                if (Array.isArray(config.pieces)) {
-                config.pieces.forEach(p => {
-                                const piece = createPiece(p.type, p.label, p.image, p.sides, p.entryId, p.stackId, p.stackIndex);
-                    // restore transform/position/size
-                    if (p.left) piece.style.left = p.left;
-                    if (p.top) piece.style.top = p.top;
-                    if (p.width) piece.style.width = p.width;
-                    if (p.height) piece.style.height = p.height;
-                    const rotation = p.rotation || '0';
-                    piece.dataset.rotation = rotation;
-                    piece.style.transform = `rotate(${rotation}deg)`;
-                    if (p.opacity) piece.style.opacity = p.opacity;
-                    if (p.zIndex) piece.style.zIndex = p.zIndex;
-                    if (p.diceValue && piece.dataset.type === 'dice') {
-                        const valueEl = piece.querySelector('.dice-value');
-                        if (valueEl) valueEl.textContent = p.diceValue;
+                if (lastLoadedConfig && typeof restoreBoardBtn !== 'undefined' && restoreBoardBtn) {
+                    restoreBoardBtn.disabled = false;
+                }
+                // If this load came from the server (another user's publish/join), do not auto-publish.
+                if (source !== 'server') {
+                    // mark board as needing save (local import/changes)
+                    try {
+                        const ownerBoardId = lastCreatedBoardId || currentBoardId;
+                        if (ownerBoardId && socket && socket.connected) {
+                            // publish current layout to server so other players can access it
+                            lobbyPublishBoard(ownerBoardId);
+                            showCollabToast('Published layout to lobby');
+                        }
+                    } catch (e) {
+                        // ignore publish errors
                     }
+                }
+                // apply board color
+                if (config.boardColor) {
+                    boardColor.value = config.boardColor;
+                    applyBoardStyles();
+                }
+                // apply board background
+                if (config.boardBackground) {
+                    stageInner.style.backgroundImage = `url('${config.boardBackground}')`;
+                    stageInner.style.backgroundSize = 'cover';
+                    stageInner.style.backgroundPosition = 'center';
+                    boardPreviewImage.src = config.boardBackground;
+                    boardPreviewImage.style.display = 'block';
+                    boardPreviewNoImage.style.display = 'none';
+                } else {
+                    stageInner.style.backgroundImage = 'none';
+                    boardPreviewImage.src = '';
+                    boardPreviewImage.style.display = 'none';
+                    boardPreviewNoImage.style.display = 'block';
+                }
+
+                // clear existing pieces and list
+                stageInner.querySelectorAll('.piece').forEach(piece => {
+                    const entry = document.getElementById(piece.dataset.entryId);
+                    if (entry) entry.remove();
+                    piece.remove();
                 });
-            }
+                componentList.innerHTML = '';
+
+                // recreate pieces (batched)
+                const pieces = Array.isArray(config.pieces) ? config.pieces : [];
+                if (!pieces.length) {
+                    resolve();
+                    return;
+                }
+
+                const BATCH_SIZE = 25;
+                let idx = 0;
+
+                function processBatch() {
+                    const end = Math.min(idx + BATCH_SIZE, pieces.length);
+                    for (; idx < end; idx++) {
+                        const p = pieces[idx];
+                        const piece = createPiece(p.type, p.label, p.image, p.sides, p.entryId, p.stackId, p.stackIndex);
+                        // restore transform/position/size
+                        if (p.left) piece.style.left = p.left;
+                        if (p.top) piece.style.top = p.top;
+                        if (p.width) piece.style.width = p.width;
+                        if (p.height) piece.style.height = p.height;
+                        const rotation = p.rotation || '0';
+                        piece.dataset.rotation = rotation;
+                        piece.style.transform = `rotate(${rotation}deg)`;
+                        if (p.opacity) piece.style.opacity = p.opacity;
+                        if (p.zIndex) piece.style.zIndex = p.zIndex;
+                        if (p.diceValue && piece.dataset.type === 'dice') {
+                            const valueEl = piece.querySelector('.dice-value');
+                            if (valueEl) valueEl.textContent = p.diceValue;
+                        }
+                    }
+                    // update progress
+                    const percent = Math.round((idx / pieces.length) * 100);
+                    try { showLoading(`Loading board... ${percent}%`); } catch (e) {}
+                    if (idx < pieces.length) {
+                        setTimeout(processBatch, 0);
+                    } else {
+                        resolve();
+                    }
+                }
+
+                processBatch();
+            });
         }
 
         function clearBoard() {
@@ -1590,14 +1618,14 @@
         }
 
         if (restoreBoardBtn) {
-            restoreBoardBtn.addEventListener('click', () => {
+            restoreBoardBtn.addEventListener('click', async () => {
                 if (!lastLoadedConfig) {
                     showCollabToast('No original board data to restore.');
                     return;
                 }
                 try { showLoading('Restoring board...'); } catch(e){}
                 try {
-                    loadLayout(lastLoadedConfig);
+                    await loadLayout(lastLoadedConfig, { source: 'local' });
                     setBoardDirty(false);
                     showCollabToast('Board restored to original loaded state.');
                 } finally { try { hideLoading(); } catch(e){} }
